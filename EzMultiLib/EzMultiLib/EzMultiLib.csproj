@@ -8,9 +8,9 @@
 
   <ItemGroup>
     <Folder Include="Clients\" />
+    <Folder Include="Packets\" />
     <Folder Include="Routing\" />
     <Folder Include="Serialization\" />
-    <Folder Include="Packets\" />
   </ItemGroup>
 
 </Project>
