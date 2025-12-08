@@ -8,7 +8,6 @@
 
   <ItemGroup>
     <Folder Include="Clients\" />
-    <Folder Include="Packets\" />
     <Folder Include="Routing\" />
     <Folder Include="Serialization\" />
   </ItemGroup>
