@@ -1,4 +1,5 @@
-﻿using System.Net;
+﻿using EzMultiLib.Packets;
+using System.Net;
 using System.Net.Sockets;
 
 namespace EzMultiLib.Transport
@@ -6,11 +7,13 @@ namespace EzMultiLib.Transport
     public class EzTransport
     {
         private UdpClient udp;
+        // Old
 		public event Action<IPEndPoint, byte[]>? OnData;
 
 		public EzTransport(int port)
         {
             udp = new UdpClient(port);
+            PacketActionGenerator.GeneratePackAction();
             AcceptPackets();
         }
 

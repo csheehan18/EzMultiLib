@@ -1,9 +1,7 @@
-﻿using System;
-using System.Net;
+﻿using System.Net;
 using System.Text;
-using System.Threading.Tasks;
 using EzMultiLib.Transport;
-using Xunit;
+using EzMultiLib.Packets;
 
 public class EzTransportTests
 {
@@ -39,4 +37,9 @@ public class EzTransportTests
 
 		transport.Dispose();
 	}
+}
+
+public class SimplePacket : IPacket 
+{
+	public string? text;
 }
