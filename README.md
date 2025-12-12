@@ -8,7 +8,11 @@ PacketAction.OnSimplePacket += (peer, packet) =>
 	receivedPeer = peer;
 	receivedPacket = packet;
 };
+OR
+PacketAction.OnSimplePacket += HandlePacket;
 
+void HandlePacket(Peer p, SimplePacket pkt)
+```
 ## EzMultiLib Development Roadmap
 
 ### 1. Packet & Protocol Core
