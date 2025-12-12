@@ -7,6 +7,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EzMultiLib", "EzMultiLib\Ez
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EzMultiLib.Tests", "EzMultiLib.Tests\EzMultiLib.Tests.csproj", "{C4B82A85-B20E-43EF-A7C1-DD4B76FE6280}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EzMultiLib.Generators", "EzMultiLib.Generators\EzMultiLib.Generators.csproj", "{91B3DA0B-AA41-410B-B8AF-C7C4126B74F7}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -41,6 +43,18 @@ Global
 		{C4B82A85-B20E-43EF-A7C1-DD4B76FE6280}.Release|x64.Build.0 = Release|Any CPU
 		{C4B82A85-B20E-43EF-A7C1-DD4B76FE6280}.Release|x86.ActiveCfg = Release|Any CPU
 		{C4B82A85-B20E-43EF-A7C1-DD4B76FE6280}.Release|x86.Build.0 = Release|Any CPU
+		{91B3DA0B-AA41-410B-B8AF-C7C4126B74F7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{91B3DA0B-AA41-410B-B8AF-C7C4126B74F7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{91B3DA0B-AA41-410B-B8AF-C7C4126B74F7}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{91B3DA0B-AA41-410B-B8AF-C7C4126B74F7}.Debug|x64.Build.0 = Debug|Any CPU
+		{91B3DA0B-AA41-410B-B8AF-C7C4126B74F7}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{91B3DA0B-AA41-410B-B8AF-C7C4126B74F7}.Debug|x86.Build.0 = Debug|Any CPU
+		{91B3DA0B-AA41-410B-B8AF-C7C4126B74F7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{91B3DA0B-AA41-410B-B8AF-C7C4126B74F7}.Release|Any CPU.Build.0 = Release|Any CPU
+		{91B3DA0B-AA41-410B-B8AF-C7C4126B74F7}.Release|x64.ActiveCfg = Release|Any CPU
+		{91B3DA0B-AA41-410B-B8AF-C7C4126B74F7}.Release|x64.Build.0 = Release|Any CPU
+		{91B3DA0B-AA41-410B-B8AF-C7C4126B74F7}.Release|x86.ActiveCfg = Release|Any CPU
+		{91B3DA0B-AA41-410B-B8AF-C7C4126B74F7}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
