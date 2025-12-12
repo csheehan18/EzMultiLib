@@ -1,7 +1,13 @@
 # EzMultiLib
 I hate most networking solutions so I made my own.
 
-## EzMultiLib Development Checklist
+## Code Example 
+```csharp
+PacketAction.OnSimplePacket += (peer, packet) =>
+{
+	receivedPeer = peer;
+	receivedPacket = packet;
+};
 
 ## EzMultiLib Development Roadmap
 
