@@ -7,9 +7,17 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Folder Include="Clients\" />
-    <Folder Include="Routing\" />
-    <Folder Include="Serialization\" />
+    <Compile Remove="Routing\**" />
+    <Compile Remove="Serialization\**" />
+    <EmbeddedResource Remove="Routing\**" />
+    <EmbeddedResource Remove="Serialization\**" />
+    <None Remove="Routing\**" />
+    <None Remove="Serialization\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.Common" Version="5.0.0" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="5.0.0" />
   </ItemGroup>
 
 </Project>
