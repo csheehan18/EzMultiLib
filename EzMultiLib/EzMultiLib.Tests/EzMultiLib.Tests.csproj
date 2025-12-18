@@ -19,10 +19,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\EzMultiLib.Generators\EzMultiLib.Generators.csproj"
-                    OutputItemType="Analyzer"
-                    ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\EzMultiLib.Generators\EzMultiLib.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\EzMultiLib\EzMultiLib.csproj" />
+    <ProjectReference Include="..\Serialization\EzMultiLib.Serialization.csproj" />
   </ItemGroup>
 
 </Project>

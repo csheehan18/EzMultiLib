@@ -1,6 +1,7 @@
 ﻿using EzMultiLib.IO;
 using EzMultiLib.Packets;
 using EzMultiLib.Peers;
+using EzMultiLib.Serialization;
 using System.Text;
 
 public class EzMultiLibTest
@@ -20,7 +21,7 @@ public class EzMultiLibTest
 
 		var outgoing = new SimplePacket
 		{
-			SimpleText = "hello"
+			simpleText = "hello"
 		};
 
 		// Test writer which eventually would be handled by transports (in future)
@@ -42,23 +43,78 @@ public class EzMultiLibTest
 		PacketAction.AcceptPacket(null, incoming);
 
 		Assert.NotNull(receivedPacket);
-		Assert.Equal("hello", receivedPacket!.SimpleText);
+		Assert.Equal("hello", receivedPacket!.simpleText);
+		Assert.Null(receivedPeer);
+	}
+
+	[Fact]
+	public void Serializer_Test()
+	{
+		SimplePacket? receivedPacket = null;
+		Peer? receivedPeer = null;
+
+		// Able to subscibe to incoming packets with their Class name
+		PacketAction.OnSimplePacket += (peer, packet) =>
+		{
+			receivedPeer = peer;
+			receivedPacket = packet;
+		};
+
+		var outgoing = new ReallySimplePacket
+		{
+			favoriteNumber = 1,
+			simpleText = "hello"
+		};
+
+		// New version of serializer that transports will use behind the scenes
+		var serializer = new EzSerializer();
+
+		// Test writer which eventually would be handled by transports (in future)
+		var writer = new TestPacketWriter();
+		writer.WriteUShort(PacketAction.GetPacketId(outgoing));
+		outgoing.Serialize(writer);
+
+		var bytes = writer.ToArray();
+
+		// Read the incoming packet
+		var reader = new TestPacketReader(bytes);
+		// Since Id will be consistent accross projects we can quickly read the type of packet we recieved
+		ushort id = reader.ReadUShort();
+
+		// Read the id of the packet and return our new packet type
+		var incoming = PacketAction.CreatePacket(id, reader);
+
+		// Send packet through PacketAction to invoke an action
+		PacketAction.AcceptPacket(null, incoming);
+
+		Assert.NotNull(receivedPacket);
+		Assert.Equal("hello", receivedPacket!.simpleText);
 		Assert.Null(receivedPeer);
 	}
 }
 
+public class ReallySimplePacket : IPacket
+{
+	public int favoriteNumber;
+	public string? simpleText;
+
+	public void Serialize(IPacketWriter writer) {}
+	public void Deserialize(IPacketReader reader) {}
+}
+
 public class SimplePacket : IPacket
 {
-	public string?	 SimpleText;
+	public string? simpleText;
 
+	// Not required anymore in latest update but will keep tests
 	public void Serialize(IPacketWriter writer)
 	{
-		writer.WriteString(SimpleText);
+		writer.WriteString(simpleText);
 	}
 
 	public void Deserialize(IPacketReader reader)
 	{
-		SimpleText = reader.ReadString();
+		simpleText = reader.ReadString();
 	}
 }
 
