@@ -8,11 +8,8 @@
 
   <ItemGroup>
     <Compile Remove="Routing\**" />
-    <Compile Remove="Serialization\**" />
     <EmbeddedResource Remove="Routing\**" />
-    <EmbeddedResource Remove="Serialization\**" />
     <None Remove="Routing\**" />
-    <None Remove="Serialization\**" />
   </ItemGroup>
 
   <ItemGroup>
