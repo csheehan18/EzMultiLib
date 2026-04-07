@@ -13,6 +13,14 @@ PacketAction.OnSimplePacket += HandlePacket;
 
 void HandlePacket(Peer p, SimplePacket pkt)
 ```
+### Easily Define Packets
+```csharp
+public class SimplePacket : IPacket
+{
+	public int favoriteNumber;
+	public string? simpleText;
+}
+```
 ## EzMultiLib Development Roadmap
 
 ### 1. Packet & Protocol Core
@@ -31,9 +39,7 @@ void HandlePacket(Peer p, SimplePacket pkt)
 ### 2. Serialization System
 - [x] `IPacketReader` / `IPacketWriter` abstractions
 - [x] Primitive serialization support
-- [ ] Built-in helper serializer (optional)
-- [ ] Allocation optimizations
-- [ ] Optional compression support
+- [x] Built-in helper serializer
 
 ### 3. Server / Client Coordination
 - [ ] `EzMultiServer`
