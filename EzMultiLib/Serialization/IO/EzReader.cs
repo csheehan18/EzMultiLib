@@ -13,6 +13,7 @@ namespace EzMultiLib.Serialization.IO
 			_reader = new BinaryReader(new MemoryStream(data), Encoding.UTF8);
 		}
 
+		public byte ReadByte() => _reader.ReadByte();
 		public int ReadInt() => _reader.ReadInt32();
 		public float ReadFloat() => _reader.ReadSingle();
 		public bool ReadBool() => _reader.ReadBoolean();

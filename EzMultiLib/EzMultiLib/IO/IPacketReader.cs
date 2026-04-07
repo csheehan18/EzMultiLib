@@ -2,6 +2,7 @@
 {
 	public interface IPacketReader
 	{
+		byte ReadByte();
 		int ReadInt();
 		float ReadFloat();
 		bool ReadBool();

@@ -139,29 +139,24 @@ public sealed class PacketActionGenerator : ISourceGenerator
 		sb.AppendLine("        }");
 
 		sb.AppendLine();
-		sb.AppendLine("        public static IPacket CreatePacket(ushort id, IPacketReader reader)");
-		sb.AppendLine("        {");
-		sb.AppendLine("            switch (id)");
-		sb.AppendLine("            {");
+        sb.AppendLine("        public static IPacket CreatePacket(ushort id, byte[] data)");
+        sb.AppendLine("        {");
+        sb.AppendLine("            switch (id)");
+        sb.AppendLine("            {");
 
-		foreach (var pkt in packets)
-		{
-			var typeName = pkt.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+        foreach (var pkt in packets)
+        {
+            var typeName = pkt.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
 
-			sb.AppendLine($"                case {pkt.Name}Id:");
-			sb.AppendLine($"                {{");
-			sb.AppendLine($"                    var p = new {typeName}();");
-			sb.AppendLine($"                    p.Deserialize(reader);");
-			sb.AppendLine($"                    return p;");
-			sb.AppendLine($"                }}");
-		}
+            sb.AppendLine($"                case {pkt.Name}Id:");
+            sb.AppendLine($"                    return EzMultiLib.Serialization.EzSerializer.Deserialize(typeof({typeName}), data);");
+        }
 
-		sb.AppendLine("                default:");
-		sb.AppendLine("                    throw new ArgumentException(\"Unknown packet id\", nameof(id));");
-		sb.AppendLine("            }");
-		sb.AppendLine("        }");
-
-		sb.AppendLine("    }");
+        sb.AppendLine("                default:");
+        sb.AppendLine("                    throw new ArgumentException(\"Unknown packet id\", nameof(id));");
+        sb.AppendLine("            }");
+        sb.AppendLine("        }");
+        sb.AppendLine("    }");
 		sb.AppendLine("}");
 
 		return sb.ToString();

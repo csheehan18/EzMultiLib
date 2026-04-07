@@ -14,6 +14,7 @@ namespace EzMultiLib.Serialization.IO
 			_writer = new BinaryWriter(_stream, Encoding.UTF8, true);
 		}
 
+		public void WriteByte(byte value) => _writer.Write(value);
 		public void WriteInt(int value) => _writer.Write(value);
 		public void WriteFloat(float value) => _writer.Write(value);
 		public void WriteBool(bool value) => _writer.Write(value);

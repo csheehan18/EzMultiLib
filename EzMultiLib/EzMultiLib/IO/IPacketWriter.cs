@@ -2,6 +2,7 @@
 {
 	public interface IPacketWriter
 	{
+		void WriteByte(byte value);
 		void WriteInt(int value);
 		void WriteFloat(float value);
 		void WriteBool(bool value);
