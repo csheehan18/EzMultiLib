@@ -10,15 +10,15 @@ and a reflection-based serializer which occurs once during each new packet type 
 are cached and reused for all purposes.
 
 ## Define Packets
-Just implement IPacket — no attributes, no registration, no boilerplate.
+Just implement IPacket its as simple as that
 Fields are serialized automatically.
-
+```csharp
 public class LoginPacket : IPacket
 {
     public string username;
     public int playerId;
 }
-
+```
 ## Subscribe To Events
 Events are generated automatically for every IPacket class in your project.
 ```csharp
@@ -36,17 +36,12 @@ void HandleLogin(Peer peer, LoginPacket packet) { }
 var bytes = EzSerializer.Serialize(new LoginPacket { username = "Alice", playerId = 1 });
 ```
 ## Shared Packet
-The real power comes from a shared project. Define your packets once, 
-reference the dll from both your server and client — IDs are assigned 
+The real power of this library comes from a shared project. Define your packets once, 
+reference the dll from both your server and client. The IDs are assigned 
 deterministically at compile time so both sides always agree without 
 any handshake or negotiation.
 
-SharedPackets.dll
-    LoginPacket  → ID 1
-    MovePacket   → ID 2
-
-
-## Supported Field Types
+## Supported Field Types (I'll add more in the future)
 - int
 - ushort
 - byte
