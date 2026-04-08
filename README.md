@@ -1,63 +1,54 @@
 # EzMultiLib
-I hate most networking solutions so I made my own.
+I hate most networking solutions so I made my own. Built transport-agnostically 
+so it works with whatever you prefer. I will eventually make a UDP transport 
+as EzMultiLib.Transport. So you could hook in whatever you want.
 
-## Code Example 
-```csharp
-PacketAction.OnSimplePacket += (peer, packet) =>
-{
-	receivedPeer = peer;
-	receivedPacket = packet;
-};
-OR
-PacketAction.OnSimplePacket += HandlePacket;
+## How It Works
+Define a packet, subscribe to an event, done. It handles serialization 
+and dispatch automatically behind the scenes using a Roslyn source generator 
+and a reflection-based serializer which occurs once during each new packet type and results
+are cached and reused for all purposes.
 
-void HandlePacket(Peer p, SimplePacket pkt)
-```
-### Easily Define Packets
-```csharp
-public class SimplePacket : IPacket
+## Define Packets
+Just implement IPacket — no attributes, no registration, no boilerplate.
+Fields are serialized automatically.
+
+public class LoginPacket : IPacket
 {
-	public int favoriteNumber;
-	public string? simpleText;
+    public string username;
+    public int playerId;
 }
+
+## Subscribe To Events
+Events are generated automatically for every IPacket class in your project.
+```csharp
+PacketAction.OnLoginPacket += (peer, packet) =>
+{
+    Console.WriteLine($"{packet.username} connected!");
+};
+
+// or
+PacketAction.OnLoginPacket += HandleLogin;
+void HandleLogin(Peer peer, LoginPacket packet) { }
 ```
-## EzMultiLib Development Roadmap
+## Send A Packet
+```csharp
+var bytes = EzSerializer.Serialize(new LoginPacket { username = "Alice", playerId = 1 });
+```
+## Shared Packet
+The real power comes from a shared project. Define your packets once, 
+reference the dll from both your server and client — IDs are assigned 
+deterministically at compile time so both sides always agree without 
+any handshake or negotiation.
 
-### 1. Packet & Protocol Core
-- [x] Define `IPacket` interface
-- [x] Explicit `Serialize / Deserialize` contract
-- [x] Compile-time discovery of all `IPacket` implementations
-- [x] Deterministic packet ID generation
-- [x] Source-generated packet ID constants
-- [x] Source-generated packet factory (`CreatePacket`)
-- [x] Source-generated packet dispatcher (`AcceptPacket`)
-- [x] Source-generated strongly typed events (`OnMovePacket`, etc.)
-- [x] Zero reflection / zero runtime registration
-- [x] Transport-agnostic protocol layer
-- [x] End-to-end protocol test validating serialize → dispatch pipeline
+SharedPackets.dll
+    LoginPacket  → ID 1
+    MovePacket   → ID 2
 
-### 2. Serialization System
-- [x] `IPacketReader` / `IPacketWriter` abstractions
-- [x] Primitive serialization support
-- [x] Built-in helper serializer
 
-### 3. Server / Client Coordination
-- [ ] `EzMultiServer`
-- [ ] `EzMultiClient`
-- [ ] Peer lifecycle ownership (created by server/client only)
-- [ ] Automatic packet receive → `CreatePacket` → `AcceptPacket` wiring
-- [ ] Broadcast helpers and targeted sends
-
-### 4. Reliability Layer (Protocol-Level)
-- [ ] Reliable packet flag
-- [ ] Sequence numbers
-- [ ] ACK packets
-- [ ] Resend queues
-- [ ] Packet ordering options
-- [ ] Reliability diagnostics / debugging hooks
-
-### 5. Transport Layer (Separate Projects)
-- [ ] Transport interface definition
-- [ ] UDP transport implementation
-- [ ] In-memory transport (testing / simulation)
-- [ ] Optional TCP / WebSocket transport
+## Supported Field Types
+- int
+- ushort
+- byte
+- bool
+- string
