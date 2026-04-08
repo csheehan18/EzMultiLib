@@ -1,7 +1,7 @@
 # EzMultiLib
 I hate most networking solutions so I made my own. Built transport-agnostically 
-so it works with whatever you prefer. I will eventually make a UDP transport 
-as EzMultiLib.Transport. So you could hook in whatever you want.
+so it works with whatever you prefer. So you could hook in whatever you want. I will 
+eventually make a UDP transport as EzMultiLib.Transport
 
 ## How It Works
 Define a packet, subscribe to an event, done. It handles serialization 
