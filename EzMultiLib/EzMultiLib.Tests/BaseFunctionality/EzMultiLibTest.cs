@@ -1,6 +1,7 @@
 ﻿using EzMultiLib.Packets;
 using EzMultiLib.Peers;
 using EzMultiLib.Serialization;
+using EzMultiLib.Serialization.Packets;
 
 public class EzMultiLibTest
 {
@@ -22,19 +23,10 @@ public class EzMultiLibTest
             simpleText = "hello"
         };
 
-        // Serialize to bytes, prepend the packet ID
-        var packetBytes = EzSerializer.Serialize(outgoing);
-        var buffer = new byte[2 + packetBytes.Length];
-        var id = PacketAction.GetPacketId(outgoing);
-        buffer[0] = (byte)(id >> 8);
-        buffer[1] = (byte)(id & 0xFF);
-        packetBytes.CopyTo(buffer, 2);
+        var framed = PacketFramer.Frame(PacketAction.GetPacketId(outgoing), outgoing);
 
-        // Read incoming
-        var idFromBuffer = (ushort)((buffer[0] << 8) | buffer[1]);
-        var dataFromBuffer = buffer[2..];
-
-        var incoming = PacketAction.CreatePacket(idFromBuffer, dataFromBuffer);
+        var (id, data) = PacketFramer.Deframe(framed);
+        var incoming = PacketAction.CreatePacket(id, data);
         PacketAction.AcceptPacket(null, incoming);
 
         Assert.NotNull(receivedPacket);

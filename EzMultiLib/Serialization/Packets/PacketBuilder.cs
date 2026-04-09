@@ -1,7 +1,7 @@
 ﻿using EzMultiLib.Serialization.IO;
 using System;
 
-namespace EzMultiLib.Serialization
+namespace EzMultiLib.Serialization.Packets
 {
 	internal static class PacketBuilder
 	{
