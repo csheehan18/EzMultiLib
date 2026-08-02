@@ -1,12 +1,20 @@
-﻿namespace EzMultiLib.IO
+namespace EzMultiLib.IO
 {
 	public interface IPacketReader
 	{
-		byte ReadByte();
-		int ReadInt();
-		float ReadFloat();
+		bool Failed { get; }
+
 		bool ReadBool();
+		sbyte ReadSByte();
+		byte ReadByte();
+		short ReadShort();
 		ushort ReadUShort();
-		string ReadString();
+		int ReadInt();
+		uint ReadUInt();
+		long ReadLong();
+		ulong ReadULong();
+		float ReadFloat();
+		double ReadDouble();
+		string? ReadString();
 	}
 }

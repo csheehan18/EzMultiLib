@@ -1,6 +1,7 @@
-﻿using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System.Collections.Generic;
+
 internal sealed class PacketSyntaxReceiver : ISyntaxReceiver
 {
 	public List<TypeDeclarationSyntax> Candidates { get; }
@@ -8,7 +9,7 @@ internal sealed class PacketSyntaxReceiver : ISyntaxReceiver
 
 	public void OnVisitSyntaxNode(SyntaxNode node)
 	{
-		if (node is TypeDeclarationSyntax typeDecl)
+		if (node is TypeDeclarationSyntax typeDecl && typeDecl.BaseList != null)
 		{
 			Candidates.Add(typeDecl);
 		}
