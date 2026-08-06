@@ -5,9 +5,9 @@ namespace EzMultiLib.Packets
 	[AttributeUsage(AttributeTargets.Class | AttributeTargets.Struct, AllowMultiple = false, Inherited = false)]
 	public sealed class PacketIdAttribute : Attribute
 	{
-		public ushort Id { get; }
+		public uint Id { get; }
 
-		public PacketIdAttribute(ushort id)
+		public PacketIdAttribute(uint id)
 		{
 			Id = id;
 		}

@@ -23,6 +23,9 @@ namespace EzMultiLib.Serialization.IO
 
 		public void Reset() => _position = 0;
 
+		// Take can reallocate _buffer, so callers must call it before they touch the
+		// field. Inlined into a _buffer expression it captures the old array and the
+		// bytes land in the copy that the resize already discarded.
 		private int Take(int count)
 		{
 			var required = _position + count;
@@ -44,7 +47,11 @@ namespace EzMultiLib.Serialization.IO
 
 		public void WriteBool(bool value) => WriteByte(value ? (byte)1 : (byte)0);
 
-		public void WriteByte(byte value) => _buffer[Take(1)] = value;
+		public void WriteByte(byte value)
+		{
+			var i = Take(1);
+			_buffer[i] = value;
+		}
 
 		public void WriteSByte(sbyte value) => WriteByte((byte)value);
 
@@ -100,7 +107,9 @@ namespace EzMultiLib.Serialization.IO
 				throw new ArgumentException($"String is {count} bytes encoded, which exceeds the {ushort.MaxValue} byte limit.", nameof(value));
 
 			WriteUShort((ushort)count);
-			Encoding.UTF8.GetBytes(value, 0, value.Length, _buffer, Take(count));
+
+			var i = Take(count);
+			Encoding.UTF8.GetBytes(value, 0, value.Length, _buffer, i);
 		}
 
 		public byte[] ToArray()

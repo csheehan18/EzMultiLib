@@ -3,6 +3,7 @@ namespace EzMultiLib.IO
 	public interface IPacketReader
 	{
 		bool Failed { get; }
+		int Remaining { get; }
 
 		bool ReadBool();
 		sbyte ReadSByte();

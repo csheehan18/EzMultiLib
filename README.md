@@ -20,17 +20,32 @@ public class LoginPacket : IPacket
 }
 ```
 ## Subscribe To Events
-Events are generated automatically for every IPacket class in your project.
+Handlers live on a `PacketDispatcher`, which is generated with one event per IPacket
+class in your project. `PacketAction.Default` is a ready made one for when you only
+need a single endpoint.
 ```csharp
-PacketAction.OnLoginPacket += (peer, packet) =>
+PacketAction.Default.OnLoginPacket += (peer, packet) =>
 {
     Console.WriteLine($"{packet.username} connected!");
 };
 
 // or
-PacketAction.OnLoginPacket += HandleLogin;
+PacketAction.Default.OnLoginPacket += HandleLogin;
 void HandleLogin(Peer peer, LoginPacket packet) { }
 ```
+Make your own when one process is more than one endpoint. A client and a server in
+the same process need a dispatcher each, otherwise every handler sees every packet
+no matter which socket it arrived on:
+```csharp
+var server = new PacketDispatcher();
+var client = new PacketDispatcher();
+
+server.OnChatPacket += (peer, chat) => BroadcastToAll(chat);
+client.OnChatPacket += (peer, chat) => chatUI.Append(chat.text);
+```
+One dispatcher per endpoint, not per peer. A server has one and all of its peers
+share it, which is what the `Peer` argument is for. `ClearHandlers()` detaches
+everything at once, for teardown that would otherwise leak subscribers.
 ## Send A Packet
 The packet id is written into the payload, so a transport only has to move the bytes.
 ```csharp
@@ -41,7 +56,7 @@ Bytes off the network are untrusted, so the receive path never throws on bad inp
 `TryDeserialize` in your server loop and drop whatever fails.
 ```csharp
 if (EzSerializer.TryDeserialize(bytes, out var packet))
-    PacketAction.AcceptPacket(peer, packet);
+    dispatcher.Accept(peer, packet);
 else
     peer.Kick();
 ```
@@ -58,7 +73,7 @@ leaves the rest alone, so you can pack several into one datagram:
 EzSerializer.Write(writer, packet);
 
 while (EzSerializer.TryRead(reader, out var packet))
-    PacketAction.AcceptPacket(peer, packet);
+    dispatcher.Accept(peer, packet);
 ```
 ## Shared Packet
 The real power of this library comes from a shared project. Define your packets once, 
@@ -92,6 +107,12 @@ generated without them. If you try, you get a build error telling you so.
 An id is derived from the packet's type name, so it does not change when you add,
 remove or reorder packets. Only renaming a packet changes its id. A client built
 one patch behind still agrees with the server about every packet they share.
+
+Ids are 32 bit and go on the wire as a 4 byte little endian header. Deriving the id
+from the name is what lets both sides agree without a handshake, but it also means
+two names can hash to the same id, and the odds of that grow with the square of your
+packet count. A 32 bit space keeps it negligible: roughly 1 in a million at 100
+packet types, where a 16 bit space would have been about 1 in 14.
 
 If two packets happen to hash to the same id you get a build error, and you pin one
 of them:

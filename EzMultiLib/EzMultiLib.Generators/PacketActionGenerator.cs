@@ -67,9 +67,9 @@ public sealed class PacketActionGenerator : ISourceGenerator
 	{
 		public INamedTypeSymbol Symbol { get; }
 		public List<IFieldSymbol> Fields { get; }
-		public ushort Id { get; }
+		public uint Id { get; }
 
-		public PacketModel(INamedTypeSymbol symbol, List<IFieldSymbol> fields, ushort id)
+		public PacketModel(INamedTypeSymbol symbol, List<IFieldSymbol> fields, uint id)
 		{
 			Symbol = symbol;
 			Fields = fields;
@@ -315,7 +315,7 @@ public sealed class PacketActionGenerator : ISourceGenerator
 		return accepted;
 	}
 
-	private static ushort StableId(string name)
+	private static uint StableId(string name)
 	{
 		unchecked
 		{
@@ -329,8 +329,13 @@ public sealed class PacketActionGenerator : ISourceGenerator
 				hash *= 16777619u;
 			}
 
-			var folded = (ushort)((hash ^ (hash >> 16)) & 0xFFFF);
-			return folded == 0 ? (ushort)1 : folded;
+			hash ^= hash >> 16;
+			hash *= 0x85EBCA6Bu;
+			hash ^= hash >> 13;
+			hash *= 0xC2B2AE35u;
+			hash ^= hash >> 16;
+
+			return hash == 0 ? 1u : hash;
 		}
 	}
 
@@ -338,7 +343,7 @@ public sealed class PacketActionGenerator : ISourceGenerator
 		GeneratorExecutionContext context,
 		INamedTypeSymbol packet,
 		INamedTypeSymbol? packetIdSymbol,
-		out ushort id)
+		out uint id)
 	{
 		id = StableId(packet.Name);
 
@@ -356,7 +361,7 @@ public sealed class PacketActionGenerator : ISourceGenerator
 		if (value == null)
 			return true;
 
-		var declared = Convert.ToUInt16(value);
+		var declared = Convert.ToUInt32(value);
 
 		if (declared == 0)
 		{
@@ -544,6 +549,8 @@ public sealed class PacketActionGenerator : ISourceGenerator
 
 		AppendPacketAction(sb, packets);
 		sb.AppendLine();
+		AppendDispatcher(sb, packets);
+		sb.AppendLine();
 		AppendSerializer(sb, packets);
 
 		return sb.ToString();
@@ -558,18 +565,13 @@ public sealed class PacketActionGenerator : ISourceGenerator
 
 		foreach (var packet in packets)
 		{
-			sb.AppendLine($"        public const ushort {packet.Name}Id = {packet.Id};");
+			sb.AppendLine($"        public const uint {packet.Name}Id = {packet.Id}u;");
 		}
 
 		sb.AppendLine();
-
-		foreach (var packet in packets)
-		{
-			sb.AppendLine($"        public static event Action<Peer?, {packet.TypeName}>? On{packet.Name};");
-		}
-
+		sb.AppendLine("        public static PacketDispatcher Default { get; } = new PacketDispatcher();");
 		sb.AppendLine();
-		sb.AppendLine("        public static ushort GetPacketId(IPacket packet)");
+		sb.AppendLine("        public static uint GetPacketId(IPacket packet)");
 		sb.AppendLine("        {");
 		sb.AppendLine("            switch (packet)");
 		sb.AppendLine("            {");
@@ -584,7 +586,25 @@ public sealed class PacketActionGenerator : ISourceGenerator
 		sb.AppendLine("            }");
 		sb.AppendLine("        }");
 		sb.AppendLine();
-		sb.AppendLine("        public static void AcceptPacket(Peer? peer, IPacket packet)");
+		sb.AppendLine("        public static void AcceptPacket(Peer? peer, IPacket packet) => Default.Accept(peer, packet);");
+		sb.AppendLine("    }");
+		sb.AppendLine("}");
+	}
+
+	private static void AppendDispatcher(StringBuilder sb, List<PacketModel> packets)
+	{
+		sb.AppendLine("namespace EzMultiLib.Packets");
+		sb.AppendLine("{");
+		sb.AppendLine("    public sealed class PacketDispatcher");
+		sb.AppendLine("    {");
+
+		foreach (var packet in packets)
+		{
+			sb.AppendLine($"        public event Action<Peer?, {packet.TypeName}>? On{packet.Name};");
+		}
+
+		sb.AppendLine();
+		sb.AppendLine("        public void Accept(Peer? peer, IPacket packet)");
 		sb.AppendLine("        {");
 		sb.AppendLine("            switch (packet)");
 		sb.AppendLine("            {");
@@ -599,6 +619,16 @@ public sealed class PacketActionGenerator : ISourceGenerator
 		sb.AppendLine("                default:");
 		sb.AppendLine("                    throw new ArgumentException($\"Unknown packet type '{packet?.GetType()}'\", nameof(packet));");
 		sb.AppendLine("            }");
+		sb.AppendLine("        }");
+		sb.AppendLine();
+		sb.AppendLine("        public void ClearHandlers()");
+		sb.AppendLine("        {");
+
+		foreach (var packet in packets)
+		{
+			sb.AppendLine($"            On{packet.Name} = null;");
+		}
+
 		sb.AppendLine("        }");
 		sb.AppendLine("    }");
 		sb.AppendLine("}");
@@ -695,7 +725,7 @@ public sealed class PacketActionGenerator : ISourceGenerator
 		sb.AppendLine("            }");
 		sb.AppendLine("        }");
 		sb.AppendLine();
-		sb.AppendLine("        public static IPacket ReadBody(ushort id, IPacketReader reader)");
+		sb.AppendLine("        public static IPacket ReadBody(uint id, IPacketReader reader)");
 		sb.AppendLine("        {");
 		sb.AppendLine("            if (!TryReadBody(id, reader, out var packet))");
 		sb.AppendLine("                throw new MalformedPacketException($\"Unknown packet id '{id}'\");");
@@ -703,7 +733,7 @@ public sealed class PacketActionGenerator : ISourceGenerator
 		sb.AppendLine("            return packet!;");
 		sb.AppendLine("        }");
 		sb.AppendLine();
-		sb.AppendLine("        public static bool TryReadBody(ushort id, IPacketReader reader, out IPacket? packet)");
+		sb.AppendLine("        public static bool TryReadBody(uint id, IPacketReader reader, out IPacket? packet)");
 		sb.AppendLine("        {");
 		sb.AppendLine("            switch (id)");
 		sb.AppendLine("            {");

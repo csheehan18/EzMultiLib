@@ -2,6 +2,7 @@ using EzMultiLib.Packets;
 using EzMultiLib.Peers;
 using EzMultiLib.Serialization;
 using EzMultiLib.Serialization.IO;
+using EzMultiLib.Serialization.Packets;
 using SharedProtocol;
 using System.Linq;
 
@@ -19,28 +20,21 @@ public class EzMultiLibTest
 			receivedPacket = packet;
 		}
 
-		PacketAction.OnSimplePacket += Handler;
+		var dispatcher = new PacketDispatcher();
+		dispatcher.OnSimplePacket += Handler;
 
-		try
+		var outgoing = new SimplePacket
 		{
-			var outgoing = new SimplePacket
-			{
-				favoriteNumber = 1,
-				simpleText = "hello"
-			};
+			favoriteNumber = 1,
+			simpleText = "hello"
+		};
 
-			var incoming = EzSerializer.Deserialize(EzSerializer.Serialize(outgoing));
-			PacketAction.AcceptPacket(null, incoming);
+		dispatcher.Accept(null, EzSerializer.Deserialize(EzSerializer.Serialize(outgoing)));
 
-			Assert.NotNull(receivedPacket);
-			Assert.Equal(1, receivedPacket!.favoriteNumber);
-			Assert.Equal("hello", receivedPacket!.simpleText);
-			Assert.Null(receivedPeer);
-		}
-		finally
-		{
-			PacketAction.OnSimplePacket -= Handler;
-		}
+		Assert.NotNull(receivedPacket);
+		Assert.Equal(1, receivedPacket!.favoriteNumber);
+		Assert.Equal("hello", receivedPacket!.simpleText);
+		Assert.Null(receivedPeer);
 	}
 
 	[Fact]
@@ -95,16 +89,16 @@ public class EzMultiLibTest
 	{
 		var bytes = EzSerializer.Serialize(new SimplePacket());
 
-		Assert.Equal(PacketAction.SimplePacketId, BitConverter.ToUInt16(bytes, 0));
+		Assert.Equal(PacketAction.SimplePacketId, BitConverter.ToUInt32(bytes, 0));
 	}
 
 	[Fact]
 	public void Unknown_Packet_Id_Is_Rejected()
 	{
-		Assert.False(EzSerializer.TryDeserialize(BitConverter.GetBytes((ushort)9999), out var packet));
+		Assert.False(EzSerializer.TryDeserialize(BitConverter.GetBytes(9999u), out var packet));
 		Assert.Null(packet);
 		Assert.Throws<MalformedPacketException>(
-			() => EzSerializer.Deserialize(BitConverter.GetBytes((ushort)9999)));
+			() => EzSerializer.Deserialize(BitConverter.GetBytes(9999u)));
 	}
 
 	[Fact]
@@ -205,10 +199,10 @@ public class EzMultiLibTest
 	}
 
 	[Theory]
-	[InlineData(PacketAction.SimplePacketId, 33019)]
-	[InlineData(PacketAction.EveryTypePacketId, 35000)]
-	[InlineData(PacketAction.DerivedPacketId, 31771)]
-	public void Packet_Ids_Are_Pinned_To_Known_Values(ushort actual, ushort expected)
+	[InlineData(PacketAction.SimplePacketId, 405039938u)]
+	[InlineData(PacketAction.EveryTypePacketId, 1088620065u)]
+	[InlineData(PacketAction.DerivedPacketId, 1756485217u)]
+	public void Packet_Ids_Are_Pinned_To_Known_Values(uint actual, uint expected)
 	{
 		Assert.Equal(expected, actual);
 	}
@@ -216,7 +210,7 @@ public class EzMultiLibTest
 	[Fact]
 	public void Declared_Packet_Id_Overrides_The_Hash()
 	{
-		Assert.Equal(4242, PacketAction.PinnedPacketId);
+		Assert.Equal(4242u, PacketAction.PinnedPacketId);
 	}
 
 	[Fact]
@@ -224,8 +218,105 @@ public class EzMultiLibTest
 	{
 		var bytes = EzSerializer.Serialize(new PinnedPacket { value = 5 });
 
-		Assert.Equal(4242, BitConverter.ToUInt16(bytes, 0));
+		Assert.Equal(4242u, BitConverter.ToUInt32(bytes, 0));
 		Assert.Equal(5, ((PinnedPacket)EzSerializer.Deserialize(bytes)).value);
+	}
+
+	[Fact]
+	public void Dispatchers_Do_Not_Share_Handlers()
+	{
+		var server = new PacketDispatcher();
+		var client = new PacketDispatcher();
+
+		var serverCalls = 0;
+		var clientCalls = 0;
+
+		server.OnSimplePacket += (peer, packet) => serverCalls++;
+		client.OnSimplePacket += (peer, packet) => clientCalls++;
+
+		server.Accept(null, new SimplePacket());
+
+		Assert.Equal(1, serverCalls);
+		Assert.Equal(0, clientCalls);
+
+		client.Accept(null, new SimplePacket());
+
+		Assert.Equal(1, serverCalls);
+		Assert.Equal(1, clientCalls);
+	}
+
+	[Fact]
+	public void Dispatcher_Routes_The_Peer_It_Was_Given()
+	{
+		var dispatcher = new PacketDispatcher();
+		var expected = new List<Peer?>();
+
+		dispatcher.OnSimplePacket += (peer, packet) => expected.Add(peer);
+
+		dispatcher.Accept(null, new SimplePacket());
+
+		Assert.Single(expected);
+		Assert.Null(expected[0]);
+	}
+
+	[Fact]
+	public void Clear_Handlers_Detaches_Every_Subscriber()
+	{
+		var dispatcher = new PacketDispatcher();
+		var calls = 0;
+
+		dispatcher.OnSimplePacket += (peer, packet) => calls++;
+		dispatcher.OnEveryTypePacket += (peer, packet) => calls++;
+
+		dispatcher.Accept(null, new SimplePacket());
+		dispatcher.Accept(null, new EveryTypePacket());
+
+		Assert.Equal(2, calls);
+
+		dispatcher.ClearHandlers();
+
+		dispatcher.Accept(null, new SimplePacket());
+		dispatcher.Accept(null, new EveryTypePacket());
+
+		Assert.Equal(2, calls);
+	}
+
+	[Fact]
+	public void Accept_Packet_Forwards_To_The_Default_Dispatcher()
+	{
+		var calls = 0;
+
+		void Handler(Peer? peer, PinnedPacket packet) => calls++;
+
+		PacketAction.Default.OnPinnedPacket += Handler;
+
+		try
+		{
+			PacketAction.AcceptPacket(null, new PinnedPacket());
+
+			Assert.Equal(1, calls);
+		}
+		finally
+		{
+			PacketAction.Default.OnPinnedPacket -= Handler;
+		}
+	}
+
+	[Fact]
+	public void Header_Is_A_Four_Byte_Id()
+	{
+		Assert.Equal(4, PacketFramer.HeaderSize);
+		Assert.Equal(PacketFramer.HeaderSize + sizeof(int), EzSerializer.Serialize(new PinnedPacket()).Length);
+	}
+
+	[Fact]
+	public void Declared_Id_Above_The_Old_Sixteen_Bit_Ceiling_Round_Trips()
+	{
+		var bytes = EzSerializer.Serialize(new WidePinnedPacket { value = 6 });
+
+		Assert.Equal(3000000000u, PacketAction.WidePinnedPacketId);
+		Assert.Equal(3000000000u, BitConverter.ToUInt32(bytes, 0));
+		Assert.Equal(6, ((WidePinnedPacket)EzSerializer.Deserialize(bytes)).value);
 	}
 
 	[Fact]
@@ -236,7 +327,10 @@ public class EzMultiLibTest
 			PacketAction.SimplePacketId,
 			PacketAction.EveryTypePacketId,
 			PacketAction.DerivedPacketId,
-			PacketAction.PinnedPacketId
+			PacketAction.PinnedPacketId,
+			PacketAction.WidePinnedPacketId,
+			PacketAction.SharedLoginPacketId,
+			PacketAction.SharedPinnedPacketId
 		};
 
 		Assert.Equal(ids.Length, ids.Distinct().Count());
@@ -253,7 +347,7 @@ public class EzMultiLibTest
 				PacketAction.DerivedPacketId,
 				PacketAction.PinnedPacketId
 			},
-			id => Assert.NotEqual(0, id));
+			id => Assert.NotEqual(0u, id));
 	}
 
 	[Fact]
@@ -263,33 +357,27 @@ public class EzMultiLibTest
 
 		void Handler(Peer? peer, SharedLoginPacket packet) => receivedPacket = packet;
 
-		PacketAction.OnSharedLoginPacket += Handler;
+		var dispatcher = new PacketDispatcher();
+		dispatcher.OnSharedLoginPacket += Handler;
 
-		try
-		{
-			var outgoing = new SharedLoginPacket { username = "Alice", playerId = 7 };
-			PacketAction.AcceptPacket(null, EzSerializer.Deserialize(EzSerializer.Serialize(outgoing)));
+		var outgoing = new SharedLoginPacket { username = "Alice", playerId = 7 };
+		dispatcher.Accept(null, EzSerializer.Deserialize(EzSerializer.Serialize(outgoing)));
 
-			Assert.NotNull(receivedPacket);
-			Assert.Equal("Alice", receivedPacket!.username);
-			Assert.Equal(7, receivedPacket!.playerId);
-		}
-		finally
-		{
-			PacketAction.OnSharedLoginPacket -= Handler;
-		}
+		Assert.NotNull(receivedPacket);
+		Assert.Equal("Alice", receivedPacket!.username);
+		Assert.Equal(7, receivedPacket!.playerId);
 	}
 
 	[Fact]
 	public void Referenced_Packet_Id_Matches_Its_Name_Hash()
 	{
-		Assert.Equal(40123, PacketAction.SharedLoginPacketId);
+		Assert.Equal(2964381181u, PacketAction.SharedLoginPacketId);
 	}
 
 	[Fact]
 	public void Internal_Packets_In_A_Referenced_Assembly_Are_Not_Exposed()
 	{
-		var events = typeof(PacketAction).GetEvents().Select(e => e.Name).ToArray();
+		var events = typeof(PacketDispatcher).GetEvents().Select(e => e.Name).ToArray();
 
 		Assert.Contains("OnSharedLoginPacket", events);
 		Assert.DoesNotContain("OnInternalPacket", events);
@@ -300,8 +388,8 @@ public class EzMultiLibTest
 	{
 		var bytes = EzSerializer.Serialize(new SharedPinnedPacket { health = 12.5f });
 
-		Assert.Equal(9001, PacketAction.SharedPinnedPacketId);
-		Assert.Equal(9001, BitConverter.ToUInt16(bytes, 0));
+		Assert.Equal(9001u, PacketAction.SharedPinnedPacketId);
+		Assert.Equal(9001u, BitConverter.ToUInt32(bytes, 0));
 		Assert.Equal(12.5f, ((SharedPinnedPacket)EzSerializer.Deserialize(bytes)).health);
 	}
 
@@ -340,6 +428,12 @@ public class SimplePacket : IPacket
 
 [PacketId(4242)]
 public class PinnedPacket : IPacket
+{
+	public int value;
+}
+
+[PacketId(3_000_000_000)]
+public class WidePinnedPacket : IPacket
 {
 	public int value;
 }
