@@ -63,6 +63,14 @@ public sealed class PacketActionGenerator : ISourceGenerator
 		DiagnosticSeverity.Error,
 		true);
 
+	private static readonly DiagnosticDescriptor RecursivePacket = new DiagnosticDescriptor(
+		"EZML008",
+		"Recursive packet",
+		"Packet '{0}' contains itself, directly or through another packet; a packet graph cannot be cyclic",
+		"EzMultiLib",
+		DiagnosticSeverity.Error,
+		true);
+
 	private sealed class PacketModel
 	{
 		public INamedTypeSymbol Symbol { get; }
@@ -147,14 +155,17 @@ public sealed class PacketActionGenerator : ISourceGenerator
 
 		foreach (var packet in packets)
 		{
-			if (TryBuildModel(context, packet, packetIdSymbol, out var model))
+			if (TryBuildModel(context, packet, packetIdSymbol, ipacketSymbol, out var model))
 				models.Add(model);
 		}
 
 		models = RejectDuplicateNames(context, models);
 		models = RejectCollidingIds(context, models);
+		models = RejectRecursive(context, models, ipacketSymbol);
 
-		context.AddSource("PacketAction.g.cs", GenerateSource(models, ProtocolHash(models, compilation)));
+		context.AddSource(
+			"PacketAction.g.cs",
+			GenerateSource(models, ProtocolHash(models, compilation, ipacketSymbol), ipacketSymbol));
 	}
 
 	private static bool IsPacket(INamedTypeSymbol symbol, INamedTypeSymbol ipacketSymbol)
@@ -315,6 +326,63 @@ public sealed class PacketActionGenerator : ISourceGenerator
 		return accepted;
 	}
 
+	private static List<PacketModel> RejectRecursive(
+		GeneratorExecutionContext context,
+		List<PacketModel> models,
+		INamedTypeSymbol ipacket)
+	{
+		var byName = new Dictionary<string, PacketModel>(StringComparer.Ordinal);
+
+		foreach (var model in models)
+			byName[model.Name] = model;
+
+		var accepted = new List<PacketModel>();
+
+		foreach (var model in models)
+		{
+			if (Reaches(model, model.Name, byName, ipacket, new HashSet<string>(StringComparer.Ordinal)))
+			{
+				context.ReportDiagnostic(Diagnostic.Create(
+					RecursivePacket,
+					SourceLocation(model.Symbol),
+					model.Symbol.ToDisplayString()));
+
+				continue;
+			}
+
+			accepted.Add(model);
+		}
+
+		return accepted;
+	}
+
+	private static bool Reaches(
+		PacketModel from,
+		string target,
+		Dictionary<string, PacketModel> byName,
+		INamedTypeSymbol ipacket,
+		HashSet<string> seen)
+	{
+		foreach (var field in from.Fields)
+		{
+			var type = ElementType(field.Type, out _) ?? field.Type;
+
+			if (!IsNested(type, ipacket))
+				continue;
+
+			if (type.Name == target)
+				return true;
+
+			if (!seen.Add(type.Name) || !byName.TryGetValue(type.Name, out var next))
+				continue;
+
+			if (Reaches(next, target, byName, ipacket, seen))
+				return true;
+		}
+
+		return false;
+	}
+
 	private static uint StableId(string name)
 	{
 		unchecked
@@ -346,7 +414,10 @@ public sealed class PacketActionGenerator : ISourceGenerator
 	//
 	// Field names are part of the hash because field order is derived from them, so a
 	// rename reorders the wire without changing any packet id or length.
-	private static uint ProtocolHash(List<PacketModel> models, Compilation compilation)
+	private static uint ProtocolHash(
+		List<PacketModel> models,
+		Compilation compilation,
+		INamedTypeSymbol ipacket)
 	{
 		var shared = models
 			.Where(m => !SymbolEqualityComparer.Default.Equals(
@@ -360,7 +431,7 @@ public sealed class PacketActionGenerator : ISourceGenerator
 			sb.Append(model.Name).Append(':').Append(model.Id).Append('(');
 
 			foreach (var field in model.Fields)
-				sb.Append(field.Name).Append(':').Append(PrimitiveName(field.Type)).Append(',');
+				sb.Append(field.Name).Append(':').Append(WireToken(field.Type, ipacket)).Append(',');
 
 			sb.Append(')');
 		}
@@ -410,6 +481,7 @@ public sealed class PacketActionGenerator : ISourceGenerator
 		GeneratorExecutionContext context,
 		INamedTypeSymbol packet,
 		INamedTypeSymbol? packetIdSymbol,
+		INamedTypeSymbol ipacket,
 		out PacketModel model)
 	{
 		model = null!;
@@ -445,7 +517,7 @@ public sealed class PacketActionGenerator : ISourceGenerator
 				continue;
 			}
 
-			if (PrimitiveName(field.Type) == null)
+			if (!IsSupportedField(field.Type, ipacket))
 			{
 				context.ReportDiagnostic(Diagnostic.Create(
 					UnsupportedFieldType,
@@ -534,34 +606,171 @@ public sealed class PacketActionGenerator : ISourceGenerator
 		}
 	}
 
-	private static string WriteFieldStatement(IFieldSymbol field)
+	// T[] and List<T>, one rank and one level deep. Anything else, a jagged array or
+	// a list of lists, falls through as an unsupported field type.
+	private static ITypeSymbol? ElementType(ITypeSymbol type, out bool isArray)
+	{
+		isArray = false;
+
+		if (type is IArrayTypeSymbol array)
+		{
+			isArray = true;
+			return array.Rank == 1 ? array.ElementType : null;
+		}
+
+		if (type is INamedTypeSymbol named
+			&& named.IsGenericType
+			&& named.TypeArguments.Length == 1
+			&& named.OriginalDefinition.ToDisplayString() == "System.Collections.Generic.List<T>")
+		{
+			return named.TypeArguments[0];
+		}
+
+		return null;
+	}
+
+	private static bool IsNested(ITypeSymbol type, INamedTypeSymbol ipacket) =>
+		type is INamedTypeSymbol named && IsPacket(named, ipacket);
+
+	private static bool IsSupportedValue(ITypeSymbol type, INamedTypeSymbol ipacket) =>
+		PrimitiveName(type) != null || IsNested(type, ipacket);
+
+	private static bool IsSupportedField(ITypeSymbol type, INamedTypeSymbol ipacket)
+	{
+		if (IsSupportedValue(type, ipacket))
+			return true;
+
+		var element = ElementType(type, out _);
+
+		return element != null && IsSupportedValue(element, ipacket);
+	}
+
+	// What a field contributes to the protocol hash. Shape belongs in here, not just
+	// the primitive, or swapping int for int[] would go unnoticed. An array and a
+	// List of the same element share a token, because they share a wire format and
+	// trading one for the other is not a protocol change.
+	private static string WireToken(ITypeSymbol type, INamedTypeSymbol ipacket)
+	{
+		var element = ElementType(type, out _);
+
+		if (element != null)
+			return "[]" + WireToken(element, ipacket);
+
+		return PrimitiveName(type) ?? ("@" + type.Name);
+	}
+
+	private const string Pad = "            ";
+
+	// One value. A nested reference type carries a presence flag so null survives the
+	// round trip; a nested struct cannot be null, so it does not need one.
+	private static void AppendWriteValue(StringBuilder sb, string pad, string access, ITypeSymbol type)
+	{
+		var primitive = PrimitiveName(type);
+
+		if (primitive != null)
+		{
+			if (type.TypeKind == TypeKind.Enum)
+				access = "(" + Keyword(UnderlyingSpecialType(type)) + ")" + access;
+
+			sb.AppendLine($"{pad}writer.Write{primitive}({access});");
+			return;
+		}
+
+		if (type.IsReferenceType)
+		{
+			sb.AppendLine($"{pad}writer.WriteBool({access} != null);");
+			sb.AppendLine($"{pad}if ({access} != null)");
+			sb.AppendLine($"{pad}    Write{type.Name}(writer, {access}!);");
+			return;
+		}
+
+		sb.AppendLine($"{pad}Write{type.Name}(writer, {access});");
+	}
+
+	private static string ReadValueExpression(ITypeSymbol type)
+	{
+		var primitive = PrimitiveName(type);
+
+		if (primitive == null)
+		{
+			return type.IsReferenceType
+				? $"(reader.ReadBool() ? Read{type.Name}(reader) : null!)"
+				: $"Read{type.Name}(reader)";
+		}
+
+		var value = $"reader.Read{primitive}()";
+
+		if (type.TypeKind == TypeKind.Enum)
+			return $"({type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)}){value}";
+
+		return UnderlyingSpecialType(type) == SpecialType.System_String ? value + "!" : value;
+	}
+
+	private static void AppendWriteField(StringBuilder sb, IFieldSymbol field)
 	{
 		var access = "packet." + field.Name;
+		var element = ElementType(field.Type, out var isArray);
 
-		if (field.Type.TypeKind == TypeKind.Enum)
-			access = "(" + Keyword(UnderlyingSpecialType(field.Type)) + ")" + access;
+		if (element == null)
+		{
+			AppendWriteValue(sb, Pad, access, field.Type);
+			return;
+		}
 
-		return $"writer.Write{PrimitiveName(field.Type)}({access});";
+		var count = access + (isArray ? ".Length" : ".Count");
+
+		sb.AppendLine($"{Pad}writer.WriteBool({access} != null);");
+		sb.AppendLine($"{Pad}if ({access} != null)");
+		sb.AppendLine($"{Pad}{{");
+		sb.AppendLine($"{Pad}    PacketFramer.WriteCount(writer, {count});");
+		sb.AppendLine();
+		sb.AppendLine($"{Pad}    for (var i = 0; i < {count}; i++)");
+		sb.AppendLine($"{Pad}    {{");
+		AppendWriteValue(sb, Pad + "        ", $"{access}[i]", element);
+		sb.AppendLine($"{Pad}    }}");
+		sb.AppendLine($"{Pad}}}");
 	}
 
-	private static string ReadFieldStatement(IFieldSymbol field)
+	private static void AppendReadField(StringBuilder sb, IFieldSymbol field)
 	{
-		var value = $"reader.Read{PrimitiveName(field.Type)}()";
+		var access = "packet." + field.Name;
+		var element = ElementType(field.Type, out var isArray);
 
-		if (field.Type.TypeKind == TypeKind.Enum)
+		if (element == null)
 		{
-			var typeName = field.Type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
-			value = $"({typeName}){value}";
-		}
-		else if (UnderlyingSpecialType(field.Type) == SpecialType.System_String)
-		{
-			value += "!";
+			sb.AppendLine($"{Pad}{access} = {ReadValueExpression(field.Type)};");
+			return;
 		}
 
-		return $"packet.{field.Name} = {value};";
+		var elementName = element.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+
+		sb.AppendLine($"{Pad}if (!reader.ReadBool())");
+		sb.AppendLine($"{Pad}{{");
+		sb.AppendLine($"{Pad}    {access} = null!;");
+		sb.AppendLine($"{Pad}}}");
+		sb.AppendLine($"{Pad}else");
+		sb.AppendLine($"{Pad}{{");
+		sb.AppendLine($"{Pad}    var count = reader.ReadUShort();");
+		sb.AppendLine();
+
+		// Capacity is clamped rather than taken from the count, so a datagram that
+		// claims 65535 elements and then stops cannot make us allocate for the ones
+		// it does not carry. The loop stops the moment the reader runs out.
+		sb.AppendLine($"{Pad}    var items = new List<{elementName}>(count < 32 ? count : 32);");
+		sb.AppendLine();
+		sb.AppendLine($"{Pad}    for (var i = 0; i < count && !reader.Failed; i++)");
+		sb.AppendLine($"{Pad}        items.Add({ReadValueExpression(element)});");
+		sb.AppendLine();
+		var suffix = isArray ? ".ToArray()" : string.Empty;
+
+		sb.AppendLine($"{Pad}    {access} = items{suffix};");
+		sb.AppendLine($"{Pad}}}");
 	}
 
-	private static string GenerateSource(List<PacketModel> packets, uint protocolHash)
+	private static string GenerateSource(
+		List<PacketModel> packets,
+		uint protocolHash,
+		INamedTypeSymbol ipacket)
 	{
 		var sb = new StringBuilder();
 
@@ -581,7 +790,7 @@ public sealed class PacketActionGenerator : ISourceGenerator
 		sb.AppendLine();
 		AppendDispatcher(sb, packets);
 		sb.AppendLine();
-		AppendSerializer(sb, packets);
+		AppendSerializer(sb, packets, ipacket);
 
 		return sb.ToString();
 	}
@@ -672,7 +881,7 @@ public sealed class PacketActionGenerator : ISourceGenerator
 		sb.AppendLine("}");
 	}
 
-	private static void AppendSerializer(StringBuilder sb, List<PacketModel> packets)
+	private static void AppendSerializer(StringBuilder sb, List<PacketModel> packets, INamedTypeSymbol ipacket)
 	{
 		sb.AppendLine("namespace EzMultiLib.Serialization");
 		sb.AppendLine("{");
@@ -804,7 +1013,7 @@ public sealed class PacketActionGenerator : ISourceGenerator
 			sb.AppendLine("        {");
 
 			foreach (var field in packet.Fields)
-				sb.AppendLine($"            {WriteFieldStatement(field)}");
+				AppendWriteField(sb, field);
 
 			sb.AppendLine("        }");
 			sb.AppendLine();
@@ -813,7 +1022,7 @@ public sealed class PacketActionGenerator : ISourceGenerator
 			sb.AppendLine($"            var packet = new {packet.TypeName}();");
 
 			foreach (var field in packet.Fields)
-				sb.AppendLine($"            {ReadFieldStatement(field)}");
+				AppendReadField(sb, field);
 
 			sb.AppendLine("            return packet;");
 			sb.AppendLine("        }");

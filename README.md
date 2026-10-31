@@ -161,6 +161,37 @@ Only shared packets count, so a client and a server can still each declare local
 packets of their own without drifting apart. With no shared project every packet
 counts, since both sides are built from the same source anyway.
 
+## Nested Packets And Collections
+A field can be another packet type. It goes on the wire inline, with no id of its own,
+so nesting costs nothing:
+```csharp
+public class ItemStack : IPacket
+{
+    public int count;
+    public string? name;
+}
+
+public class InventoryPacket : IPacket
+{
+    public ItemStack? equipped;
+    public ItemStack[]? stacks;
+    public List<float>? weights;
+}
+```
+A nested type is still a packet, so it also gets an id and a dispatcher event of its
+own. Ignore them, or send it on its own when that happens to be useful.
+
+`null` and empty are different values and both survive the round trip, for the
+collection itself and for every element in it. A length goes on the wire as a ushort,
+so 65535 elements is the ceiling. Reads never reserve for a claimed count, so a
+datagram that says it carries 65535 items and then stops allocates nothing for the
+ones it does not have.
+
+Arrays and lists share a wire format, so trading `T[]` for `List<T>` is not a protocol
+change and the hash stays where it was. One level deep only: `int[][]` and
+`List<List<int>>` are build errors, and so is a packet that contains itself, directly
+or through another packet.
+
 ## Supported Field Types (I'll add more in the future)
 - bool
 - sbyte, byte
@@ -170,6 +201,7 @@ counts, since both sides are built from the same source anyway.
 - float, double
 - string (null is preserved)
 - any enum, written as its underlying type
+- another packet type, written inline
+- `T[]` or `List<T>` of any of the above
 
 Public instance fields are serialized, including inherited ones, ordered by name.
-Collections, arrays and nested packets are not supported yet.

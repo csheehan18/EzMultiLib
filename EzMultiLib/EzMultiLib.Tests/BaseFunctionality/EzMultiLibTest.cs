@@ -414,6 +414,97 @@ public class EzMultiLibTest
 	}
 
 	[Fact]
+	public void Collections_And_Nested_Packets_Round_Trip()
+	{
+		var sent = new InventoryPacket
+		{
+			ids = new[] { 1, 2, 3 },
+			weights = new List<float> { 1.5f, 2.5f },
+			labels = new[] { "a", null, "ccc" },
+			teams = new[] { Team.Red, Team.Blue },
+			equipped = new ItemStack { count = 7, name = "sword" },
+			stacks = new[] { new ItemStack { count = 8, name = "x" }, null },
+			spares = new List<ItemStack> { new ItemStack { count = 9, name = null } },
+			origin = new Point { x = 10f, y = 20f },
+			route = new List<Point> { new Point { x = 1, y = 2 }, new Point { x = 3, y = 4 } }
+		};
+
+		var back = (InventoryPacket)EzSerializer.Deserialize(EzSerializer.Serialize(sent));
+
+		Assert.Equal(sent.ids, back.ids);
+		Assert.Equal(sent.weights, back.weights);
+		Assert.Equal(sent.labels, back.labels);
+		Assert.Equal(sent.teams, back.teams);
+		Assert.Equal(7, back.equipped!.count);
+		Assert.Equal("sword", back.equipped.name);
+		Assert.Equal(8, back.stacks![0]!.count);
+		Assert.Null(back.stacks[1]);
+		Assert.Null(back.spares![0].name);
+		Assert.Equal(20f, back.origin.y);
+		Assert.Equal(4f, back.route![1].y);
+	}
+
+	[Fact]
+	public void Null_And_Empty_Collections_Stay_Distinct()
+	{
+		var sent = new InventoryPacket
+		{
+			ids = Array.Empty<int>(),
+			spares = new List<ItemStack>(),
+			labels = null,
+			weights = null,
+			equipped = null
+		};
+
+		var back = (InventoryPacket)EzSerializer.Deserialize(EzSerializer.Serialize(sent));
+
+		Assert.Empty(back.ids!);
+		Assert.Empty(back.spares!);
+		Assert.Null(back.labels);
+		Assert.Null(back.weights);
+		Assert.Null(back.equipped);
+	}
+
+	[Fact]
+	public void A_Count_Bigger_Than_The_Buffer_Is_Rejected_Without_Allocating_For_It()
+	{
+		// id, a presence flag, then a count claiming 65535 ints and no data at all.
+		var hostile = new byte[7];
+		BitConverter.GetBytes(PacketAction.BigListPacketId).CopyTo(hostile, 0);
+		hostile[4] = 1;
+		hostile[5] = 0xFF;
+		hostile[6] = 0xFF;
+
+		Assert.False(EzSerializer.TryDeserialize(hostile, out var packet));
+		Assert.Null(packet);
+
+		var before = GC.GetAllocatedBytesForCurrentThread();
+
+		for (var i = 0; i < 100; i++)
+			EzSerializer.TryDeserialize(hostile, out _);
+
+		// Reserving for the claimed count would be 100 * 65535 ints here.
+		Assert.True(GC.GetAllocatedBytesForCurrentThread() - before < 1_000_000);
+	}
+
+	[Fact]
+	public void Every_Truncation_Of_A_Collection_Packet_Is_Rejected()
+	{
+		var valid = EzSerializer.Serialize(new InventoryPacket
+		{
+			ids = new[] { 1, 2 },
+			labels = new[] { "hello" },
+			stacks = new[] { new ItemStack { count = 1, name = "a" } }
+		});
+
+		for (var length = 0; length < valid.Length; length++)
+		{
+			Assert.False(EzSerializer.TryDeserialize(valid.Take(length).ToArray(), out var packet));
+			Assert.Null(packet);
+		}
+	}
+
+	[Fact]
 	public void Protocol_Hash_Covers_The_Shared_Packets()
 	{
 		// Pinned deliberately. It moves when a shared packet's id, field names, field
@@ -477,6 +568,36 @@ public class ConcreteBasePacket : IPacket
 public class ExtendedPacket : ConcreteBasePacket
 {
 	public int extra;
+}
+
+public class ItemStack : IPacket
+{
+	public int count;
+	public string? name;
+}
+
+public struct Point : IPacket
+{
+	public float x;
+	public float y;
+}
+
+public class InventoryPacket : IPacket
+{
+	public ItemStack? equipped;
+	public int[]? ids;
+	public string?[]? labels;
+	public Point origin;
+	public List<Point>? route;
+	public List<ItemStack>? spares;
+	public ItemStack?[]? stacks;
+	public Team[]? teams;
+	public List<float>? weights;
+}
+
+public class BigListPacket : IPacket
+{
+	public int[]? values;
 }
 
 public enum Team : byte
