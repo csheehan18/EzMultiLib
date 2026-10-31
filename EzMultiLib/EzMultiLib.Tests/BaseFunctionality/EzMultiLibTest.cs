@@ -688,6 +688,28 @@ public class EzMultiLibTest
 	}
 
 	[Fact]
+	public void A_Plain_Peer_Cannot_Be_Kicked()
+	{
+		// Better to say so than to look like a kick that worked.
+		var error = Assert.Throws<NotSupportedException>(() => new Peer(1).Kick());
+
+		Assert.Contains("Kick", error.Message);
+	}
+
+	[Fact]
+	public void A_Transport_Peer_Kicks_Through_Its_Override()
+	{
+		var peer = new KickablePeer(1);
+
+		Assert.False(peer.Kicked);
+
+		// Reached through the base type, the way a receive loop has it.
+		((Peer)peer).Kick();
+
+		Assert.True(peer.Kicked);
+	}
+
+	[Fact]
 	public void Protocol_Hash_Covers_The_Shared_Packets()
 	{
 		// Pinned deliberately. It moves when a shared packet's id, field names, field
@@ -803,6 +825,18 @@ public class MovePacket : IPacket
 public class ChatPacket : IPacket
 {
 	public string? text;
+}
+
+public sealed class KickablePeer : Peer
+{
+	public bool Kicked { get; private set; }
+
+	public KickablePeer(int id)
+		: base(id)
+	{
+	}
+
+	public override void Kick() => Kicked = true;
 }
 
 public enum Team : byte

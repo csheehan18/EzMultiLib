@@ -98,6 +98,38 @@ while (EzSerializer.TryRead(reader, out var packet, out var id))
 ```
 Dispatch is a jump table on the id either way, so it costs the same whether you have
 five packet types or five hundred.
+## Peers
+`Peer` is the handle your handlers are given. It carries an id and nothing else, so a
+transport subclasses it to carry the connection itself:
+```csharp
+public sealed class LiteNetPeer : Peer
+{
+    public NetPeer Connection { get; }
+
+    public LiteNetPeer(NetPeer connection)
+        : base(connection.Id)
+    {
+        Connection = connection;
+    }
+
+    public override void Kick() => Connection.Disconnect();
+}
+```
+That override is what makes `peer.Kick()` above do anything. `Kick()` on a plain `Peer`
+throws, because a kick that quietly does not happen leaves a misbehaving client
+connected and tells you nothing.
+
+Handlers take the base type, so casting back is how you reach the connection:
+```csharp
+dispatcher.OnChatPacket += (peer, chat) =>
+{
+    var connection = ((LiteNetPeer)peer!).Connection;
+};
+```
+Ids come from the transport and are only unique inside it, so two transports in one
+process can both hand out peer 1. Peers compare by reference rather than by id, which
+is what keeps those two from collapsing into one player.
+
 ## Delivery
 Not everything wants the same guarantees. A position update is better dropped than
 delivered late; chat has to arrive. Declare it on the packet:
