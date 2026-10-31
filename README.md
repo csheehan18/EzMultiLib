@@ -151,9 +151,10 @@ reserved.
 
 ## Protocol Hash
 An id survives adding and reordering packets, but it says nothing about the shape of
-the body behind it. Fields go on the wire in name order, so renaming one reorders the
-payload while the id and the length stay exactly the same. Two builds that disagree
-about a field name will read each other's fields in the wrong order and never notice.
+the body behind it. Fields go on the wire in name order unless you number them, so
+renaming one reorders the payload while the id and the length stay exactly the same.
+Two builds that disagree about a field name would read each other's fields in the wrong
+order and never notice.
 
 `PacketAction.ProtocolHash` is a compile time constant over every shared packet's id,
 field names, field order and field types. Both sides derive the same number from the
@@ -173,6 +174,51 @@ of desyncing an hour later.
 Only shared packets count, so a client and a server can still each declare local
 packets of their own without drifting apart. With no shared project every packet
 counts, since both sides are built from the same source anyway.
+
+## Field Numbers
+Name ordering is fine until you need to change a packet. Number its fields instead and
+the order comes from the numbers, so renaming a field stops being a wire change at all:
+```csharp
+public class MovePacket : IPacket
+{
+    [Field(1)] public int x;
+    [Field(2)] public int y;
+}
+```
+Number every field of a packet or none of them, running from 1 with no gaps and no
+duplicates. A packet with no numbers keeps name ordering and the exact bytes it always
+had, so nothing you have already written moves.
+
+Contiguity is not fussiness. It is what makes deleting a field a build error instead of
+a silent shift of everything behind it.
+
+### Adding A Field Later
+Mark an appended field optional and a build that predates it can still talk to one that
+has it:
+```csharp
+public class MovePacket : IPacket
+{
+    [Field(1)] public int x;
+    [Field(2)] public int y;
+    [Field(3, Optional = true)] public int z;   // added a patch later
+}
+```
+A numbered packet carries one byte saying how many optional fields follow, which is what
+lets a reader tell a field the sender never had from a field that got truncated.
+Optional fields come after every required one, and they are read back in order:
+
+- An older sender sends fewer of them, and the ones it did not know stay at their
+  default. `z` comes back as 0.
+- A newer sender sends more. Their sizes are unknown, so the tail cannot be stepped over
+  and the packet is refused rather than misread. Update servers before clients.
+
+`ProtocolHash` covers the required fields and leaves the optional tail out, so appending
+one does not lock out older builds. It also leaves field names out once a packet is
+numbered, because by then a rename is not a change to anything.
+
+Optional fields are append only. Nothing can see you remove, reorder or retype one that
+has already shipped, because tolerating a different number of them is the whole point.
+Add to the end and leave what is there alone.
 
 ## Nested Packets And Collections
 A field can be another packet type. It goes on the wire inline, with no id of its own,

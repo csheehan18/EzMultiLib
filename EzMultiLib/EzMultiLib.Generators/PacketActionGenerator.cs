@@ -71,21 +71,59 @@ public sealed class PacketActionGenerator : ISourceGenerator
 		DiagnosticSeverity.Error,
 		true);
 
+	private static readonly DiagnosticDescriptor PartiallyNumberedPacket = new DiagnosticDescriptor(
+		"EZML009",
+		"Packet numbers only some of its fields",
+		"Packet '{0}' gives a [Field] number to some of its fields but not all of them; number every field or none",
+		"EzMultiLib",
+		DiagnosticSeverity.Error,
+		true);
+
+	private static readonly DiagnosticDescriptor FieldNumbering = new DiagnosticDescriptor(
+		"EZML010",
+		"Field numbers must be contiguous",
+		"Packet '{0}' must number its fields 1 to {1}, with no gaps and no duplicates",
+		"EzMultiLib",
+		DiagnosticSeverity.Error,
+		true);
+
+	private static readonly DiagnosticDescriptor OptionalFieldOrder = new DiagnosticDescriptor(
+		"EZML011",
+		"Optional fields must come last",
+		"Packet '{0}' numbers a required field after an optional one; every optional field has to come after every required one",
+		"EzMultiLib",
+		DiagnosticSeverity.Error,
+		true);
+
 	private sealed class PacketModel
 	{
 		public INamedTypeSymbol Symbol { get; }
 		public List<IFieldSymbol> Fields { get; }
 		public uint Id { get; }
+		public bool Tagged { get; }
+		public int OptionalCount { get; }
 
-		public PacketModel(INamedTypeSymbol symbol, List<IFieldSymbol> fields, uint id)
+		public PacketModel(
+			INamedTypeSymbol symbol,
+			List<IFieldSymbol> fields,
+			uint id,
+			bool tagged,
+			int optionalCount)
 		{
 			Symbol = symbol;
 			Fields = fields;
 			Id = id;
+			Tagged = tagged;
+			OptionalCount = optionalCount;
 		}
 
 		public string Name => Symbol.Name;
 		public string TypeName => Symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
+
+		// Numbering puts every optional field after every required one, so they are
+		// simply the tail of the list.
+		public IEnumerable<IFieldSymbol> Required => Fields.Take(Fields.Count - OptionalCount);
+		public IEnumerable<IFieldSymbol> Optional => Fields.Skip(Fields.Count - OptionalCount);
 	}
 
 	public void Initialize(GeneratorInitializationContext context)
@@ -151,11 +189,14 @@ public sealed class PacketActionGenerator : ISourceGenerator
 		var packetIdSymbol =
 			compilation.GetTypeByMetadataName("EzMultiLib.Packets.PacketIdAttribute");
 
+		var fieldSymbol =
+			compilation.GetTypeByMetadataName("EzMultiLib.Packets.FieldAttribute");
+
 		var models = new List<PacketModel>();
 
 		foreach (var packet in packets)
 		{
-			if (TryBuildModel(context, packet, packetIdSymbol, ipacketSymbol, out var model))
+			if (TryBuildModel(context, packet, packetIdSymbol, fieldSymbol, ipacketSymbol, out var model))
 				models.Add(model);
 		}
 
@@ -430,8 +471,23 @@ public sealed class PacketActionGenerator : ISourceGenerator
 		{
 			sb.Append(model.Name).Append(':').Append(model.Id).Append('(');
 
-			foreach (var field in model.Fields)
-				sb.Append(field.Name).Append(':').Append(WireToken(field.Type, ipacket)).Append(',');
+			if (model.Tagged)
+			{
+				// Numbers fix the order, so a rename is no longer a wire change and names
+				// stay out. The optional tail stays out too: appending to it is exactly
+				// the compatible change numbering exists to allow.
+				var number = 0;
+
+				foreach (var field in model.Required)
+					sb.Append(++number).Append(':').Append(WireToken(field.Type, ipacket)).Append(',');
+
+				sb.Append('+');
+			}
+			else
+			{
+				foreach (var field in model.Fields)
+					sb.Append(field.Name).Append(':').Append(WireToken(field.Type, ipacket)).Append(',');
+			}
 
 			sb.Append(')');
 		}
@@ -481,6 +537,7 @@ public sealed class PacketActionGenerator : ISourceGenerator
 		GeneratorExecutionContext context,
 		INamedTypeSymbol packet,
 		INamedTypeSymbol? packetIdSymbol,
+		INamedTypeSymbol? fieldSymbol,
 		INamedTypeSymbol ipacket,
 		out PacketModel model)
 	{
@@ -530,10 +587,100 @@ public sealed class PacketActionGenerator : ISourceGenerator
 			}
 		}
 
+		if (!TryOrderFields(context, packet, fields, fieldSymbol, out var ordered, out var tagged, out var optionalCount))
+			valid = false;
+
 		if (!valid)
 			return false;
 
-		model = new PacketModel(packet, fields, id);
+		model = new PacketModel(packet, ordered, id, tagged, optionalCount);
+		return true;
+	}
+
+	// An unnumbered packet keeps name ordering, which is what every packet written
+	// before numbering existed uses. A numbered one is ordered by its numbers, so
+	// renaming a field no longer moves it on the wire.
+	private static bool TryOrderFields(
+		GeneratorExecutionContext context,
+		INamedTypeSymbol packet,
+		List<IFieldSymbol> fields,
+		INamedTypeSymbol? fieldSymbol,
+		out List<IFieldSymbol> ordered,
+		out bool tagged,
+		out int optionalCount)
+	{
+		ordered = fields;
+		tagged = false;
+		optionalCount = 0;
+
+		if (fieldSymbol == null || fields.Count == 0)
+			return true;
+
+		var tags = new List<(IFieldSymbol Field, int Number, bool Optional)>();
+
+		foreach (var field in fields)
+		{
+			var attribute = field.GetAttributes().FirstOrDefault(a =>
+				SymbolEqualityComparer.Default.Equals(a.AttributeClass, fieldSymbol));
+
+			if (attribute == null || attribute.ConstructorArguments.Length != 1)
+				continue;
+
+			var number = Convert.ToInt32(attribute.ConstructorArguments[0].Value);
+
+			var optional = attribute.NamedArguments.Any(a =>
+				a.Key == "Optional" && a.Value.Value is bool flag && flag);
+
+			tags.Add((field, number, optional));
+		}
+
+		if (tags.Count == 0)
+			return true;
+
+		if (tags.Count != fields.Count)
+		{
+			context.ReportDiagnostic(Diagnostic.Create(
+				PartiallyNumberedPacket,
+				SourceLocation(packet),
+				packet.ToDisplayString()));
+
+			return false;
+		}
+
+		var sorted = tags.OrderBy(t => t.Number).ToList();
+
+		// Contiguous from 1 is what makes removing a field a build error rather than a
+		// silent shift of everything behind it.
+		for (var i = 0; i < sorted.Count; i++)
+		{
+			if (sorted[i].Number == i + 1)
+				continue;
+
+			context.ReportDiagnostic(Diagnostic.Create(
+				FieldNumbering,
+				SourceLocation(packet),
+				packet.ToDisplayString(),
+				sorted.Count));
+
+			return false;
+		}
+
+		var first = sorted.FindIndex(t => t.Optional);
+
+		if (first >= 0 && sorted.Skip(first).Any(t => !t.Optional))
+		{
+			context.ReportDiagnostic(Diagnostic.Create(
+				OptionalFieldOrder,
+				SourceLocation(packet),
+				packet.ToDisplayString()));
+
+			return false;
+		}
+
+		ordered = sorted.Select(t => t.Field).ToList();
+		tagged = true;
+		optionalCount = sorted.Count(t => t.Optional);
+
 		return true;
 	}
 
@@ -731,40 +878,40 @@ public sealed class PacketActionGenerator : ISourceGenerator
 		sb.AppendLine($"{Pad}}}");
 	}
 
-	private static void AppendReadField(StringBuilder sb, IFieldSymbol field)
+	private static void AppendReadField(StringBuilder sb, IFieldSymbol field, string pad)
 	{
 		var access = "packet." + field.Name;
 		var element = ElementType(field.Type, out var isArray);
 
 		if (element == null)
 		{
-			sb.AppendLine($"{Pad}{access} = {ReadValueExpression(field.Type)};");
+			sb.AppendLine($"{pad}{access} = {ReadValueExpression(field.Type)};");
 			return;
 		}
 
 		var elementName = element.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
 
-		sb.AppendLine($"{Pad}if (!reader.ReadBool())");
-		sb.AppendLine($"{Pad}{{");
-		sb.AppendLine($"{Pad}    {access} = null!;");
-		sb.AppendLine($"{Pad}}}");
-		sb.AppendLine($"{Pad}else");
-		sb.AppendLine($"{Pad}{{");
-		sb.AppendLine($"{Pad}    var count = reader.ReadUShort();");
+		sb.AppendLine($"{pad}if (!reader.ReadBool())");
+		sb.AppendLine($"{pad}{{");
+		sb.AppendLine($"{pad}    {access} = null!;");
+		sb.AppendLine($"{pad}}}");
+		sb.AppendLine($"{pad}else");
+		sb.AppendLine($"{pad}{{");
+		sb.AppendLine($"{pad}    var count = reader.ReadUShort();");
 		sb.AppendLine();
 
 		// Capacity is clamped rather than taken from the count, so a datagram that
 		// claims 65535 elements and then stops cannot make us allocate for the ones
 		// it does not carry. The loop stops the moment the reader runs out.
-		sb.AppendLine($"{Pad}    var items = new List<{elementName}>(count < 32 ? count : 32);");
+		sb.AppendLine($"{pad}    var items = new List<{elementName}>(count < 32 ? count : 32);");
 		sb.AppendLine();
-		sb.AppendLine($"{Pad}    for (var i = 0; i < count && !reader.Failed; i++)");
-		sb.AppendLine($"{Pad}        items.Add({ReadValueExpression(element)});");
+		sb.AppendLine($"{pad}    for (var i = 0; i < count && !reader.Failed; i++)");
+		sb.AppendLine($"{pad}        items.Add({ReadValueExpression(element)});");
 		sb.AppendLine();
 		var suffix = isArray ? ".ToArray()" : string.Empty;
 
-		sb.AppendLine($"{Pad}    {access} = items{suffix};");
-		sb.AppendLine($"{Pad}}}");
+		sb.AppendLine($"{pad}    {access} = items{suffix};");
+		sb.AppendLine($"{pad}}}");
 	}
 
 	private static string GenerateSource(
@@ -1047,6 +1194,11 @@ public sealed class PacketActionGenerator : ISourceGenerator
 			sb.AppendLine($"        public static void Write{packet.Name}(IPacketWriter writer, {packet.TypeName} packet)");
 			sb.AppendLine("        {");
 
+			// How many optional fields follow. A constant for this build, and what lets
+			// the other side tell an omitted field from a truncated one.
+			if (packet.Tagged)
+				sb.AppendLine($"            writer.WriteByte({packet.OptionalCount});");
+
 			foreach (var field in packet.Fields)
 				AppendWriteField(sb, field);
 
@@ -1056,8 +1208,33 @@ public sealed class PacketActionGenerator : ISourceGenerator
 			sb.AppendLine("        {");
 			sb.AppendLine($"            var packet = new {packet.TypeName}();");
 
-			foreach (var field in packet.Fields)
-				AppendReadField(sb, field);
+			if (packet.Tagged)
+			{
+				sb.AppendLine("            var optional = reader.ReadByte();");
+				sb.AppendLine();
+				sb.AppendLine("            // The sender has optional fields this build does not know, and their");
+				sb.AppendLine("            // sizes are unknown too, so the tail cannot be stepped over and the");
+				sb.AppendLine("            // framing is gone with it. Fail rather than guess.");
+				sb.AppendLine($"            if (optional > {packet.OptionalCount})");
+				sb.AppendLine("            {");
+				sb.AppendLine("                PacketFramer.Fail(reader);");
+				sb.AppendLine("                return packet;");
+				sb.AppendLine("            }");
+				sb.AppendLine();
+			}
+
+			foreach (var field in packet.Required)
+				AppendReadField(sb, field, Pad);
+
+			var present = 0;
+
+			foreach (var field in packet.Optional)
+			{
+				sb.AppendLine($"{Pad}if (optional > {present++})");
+				sb.AppendLine($"{Pad}{{");
+				AppendReadField(sb, field, Pad + "    ");
+				sb.AppendLine($"{Pad}}}");
+			}
 
 			sb.AppendLine("            return packet;");
 			sb.AppendLine("        }");

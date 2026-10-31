@@ -577,6 +577,76 @@ public class EzMultiLibTest
 	}
 
 	[Fact]
+	public void Field_Numbers_Order_The_Wire_Not_Field_Names()
+	{
+		var bytes = EzSerializer.Serialize(new TaggedPacket { zeta = 0x11111111, alpha = 0x22222222 });
+
+		// The id, then how many optional fields follow, then field 1 ahead of field 2
+		// even though 'alpha' sorts before 'zeta'.
+		Assert.Equal(PacketAction.TaggedPacketId, BitConverter.ToUInt32(bytes, 0));
+		Assert.Equal(1, bytes[4]);
+		Assert.Equal(0x11111111, BitConverter.ToInt32(bytes, 5));
+		Assert.Equal(0x22222222, BitConverter.ToInt32(bytes, 9));
+	}
+
+	[Fact]
+	public void A_Numbered_Packet_Round_Trips()
+	{
+		var back = (TaggedPacket)EzSerializer.Deserialize(
+			EzSerializer.Serialize(new TaggedPacket { zeta = 1, alpha = 2, later = 3 }));
+
+		Assert.Equal(1, back.zeta);
+		Assert.Equal(2, back.alpha);
+		Assert.Equal(3, back.later);
+	}
+
+	[Fact]
+	public void An_Older_Sender_Leaves_A_Newer_Optional_Field_At_Its_Default()
+	{
+		var full = EzSerializer.Serialize(new TaggedPacket { zeta = 1, alpha = 2, later = 99 });
+
+		// The same packet as a build that never had field 3 would have sent it: one
+		// fewer optional field, and four fewer bytes on the tail.
+		var older = full.Take(full.Length - sizeof(int)).ToArray();
+		older[4] = 0;
+
+		Assert.True(EzSerializer.TryDeserialize(older, out var packet));
+
+		var typed = Assert.IsType<TaggedPacket>(packet);
+
+		Assert.Equal(1, typed.zeta);
+		Assert.Equal(2, typed.alpha);
+		Assert.Equal(0, typed.later);
+	}
+
+	[Fact]
+	public void A_Newer_Sender_With_Unknown_Optional_Fields_Is_Rejected()
+	{
+		var full = EzSerializer.Serialize(new TaggedPacket { zeta = 1, alpha = 2, later = 99 });
+
+		// A build carrying one more optional field than this one. Its size is unknown,
+		// so the tail cannot be stepped over and the packet has to be refused rather
+		// than read as something it is not.
+		var newer = full.Concat(new byte[sizeof(int)]).ToArray();
+		newer[4] = 2;
+
+		Assert.False(EzSerializer.TryDeserialize(newer, out var packet));
+		Assert.Null(packet);
+	}
+
+	[Fact]
+	public void Truncating_A_Numbered_Packet_Is_Still_Rejected()
+	{
+		var valid = EzSerializer.Serialize(new TaggedPacket { zeta = 1, alpha = 2, later = 3 });
+
+		for (var length = 0; length < valid.Length; length++)
+		{
+			Assert.False(EzSerializer.TryDeserialize(valid.Take(length).ToArray(), out var packet));
+			Assert.Null(packet);
+		}
+	}
+
+	[Fact]
 	public void Protocol_Hash_Covers_The_Shared_Packets()
 	{
 		// Pinned deliberately. It moves when a shared packet's id, field names, field
@@ -670,6 +740,15 @@ public class InventoryPacket : IPacket
 public class BigListPacket : IPacket
 {
 	public int[]? values;
+}
+
+// Numbered on purpose with names that sort against the numbers, so the tests can
+// tell which of the two decides the order.
+public class TaggedPacket : IPacket
+{
+	[Field(1)] public int zeta;
+	[Field(2)] public int alpha;
+	[Field(3, Optional = true)] public int later;
 }
 
 public enum Team : byte

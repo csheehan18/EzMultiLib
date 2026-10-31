@@ -1,4 +1,4 @@
-using EzMultiLib.IO;
+﻿using EzMultiLib.IO;
 using System;
 
 namespace EzMultiLib.Serialization.Packets
@@ -14,6 +14,18 @@ namespace EzMultiLib.Serialization.Packets
 		public static void WriteHeader(IPacketWriter writer, uint id) => writer.WriteUInt(id);
 
 		public static uint ReadHeader(IPacketReader reader) => reader.ReadUInt();
+
+		// Drains the reader so that Failed trips. For a packet this build cannot parse,
+		// where the unknown part's size is not known either: framing is already lost,
+		// so the rest of the buffer has to go with it rather than be misread as the
+		// next packet.
+		public static void Fail(IPacketReader reader)
+		{
+			var remaining = reader.Remaining + 1;
+
+			for (var i = 0; i < remaining; i++)
+				reader.ReadByte();
+		}
 
 		public static void WriteCount(IPacketWriter writer, int count)
 		{
