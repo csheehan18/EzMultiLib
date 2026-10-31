@@ -98,6 +98,59 @@ while (EzSerializer.TryRead(reader, out var packet, out var id))
 ```
 Dispatch is a jump table on the id either way, so it costs the same whether you have
 five packet types or five hundred.
+## Delivery
+Not everything wants the same guarantees. A position update is better dropped than
+delivered late; chat has to arrive. Declare it on the packet:
+```csharp
+[Delivery(Delivery.Sequenced)]
+public class MovePacket : IPacket
+{
+    public float x;
+    public float y;
+}
+
+[Delivery(Delivery.ReliableOrdered, Channel = 2)]
+public class ChatPacket : IPacket
+{
+    public string? text;
+}
+```
+With no attribute a packet is `ReliableOrdered` on channel 0, so nothing becomes
+droppable unless you said so. Channels keep unrelated reliable traffic off each other's
+backs: a bulk inventory sync on its own channel will not stall chat behind it.
+
+Reading it back is a jump table on the packet id, so it costs the same with five packet
+types or five hundred. `Write` hands you the id it just used, so there is nothing to
+look up twice:
+```csharp
+writer.Reset();
+EzSerializer.Write(writer, packet, out var id);
+writer.CopyTo(buffer, 0);
+
+var delivery = PacketAction.GetDelivery(id);
+```
+`GetDelivery(packet)` is there too and finds the id for you.
+
+Nothing here touches a transport and the declaration adds no bytes to the packet. Map it
+where you send. For LiteNetLib:
+```csharp
+static DeliveryMethod Map(Delivery delivery) => delivery switch
+{
+    Delivery.ReliableOrdered   => DeliveryMethod.ReliableOrdered,
+    Delivery.ReliableUnordered => DeliveryMethod.ReliableUnordered,
+    Delivery.ReliableSequenced => DeliveryMethod.ReliableSequenced,
+    Delivery.Sequenced         => DeliveryMethod.Sequenced,
+    _                          => DeliveryMethod.Unreliable
+};
+
+peer.Send(buffer, 0, writer.Length, delivery.Channel, Map(delivery.Method));
+```
+Give `NetManager.ChannelsCount` enough room for the highest channel you declare.
+
+Delivery is a send side choice and changes no byte of the payload, so it stays out of
+`ProtocolHash`. The two sides do not have to agree on it, and retuning it on one of them
+will not turn the other away.
+
 ## Shared Packet
 The real power of this library comes from a shared project. Define your packets once, 
 reference the dll from both your server and client. The IDs are assigned 

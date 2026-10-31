@@ -647,6 +647,47 @@ public class EzMultiLibTest
 	}
 
 	[Fact]
+	public void Delivery_Defaults_To_Reliable_Ordered()
+	{
+		var delivery = PacketAction.GetDelivery(new SimplePacket());
+
+		Assert.Equal(Delivery.ReliableOrdered, delivery.Method);
+		Assert.Equal(0, delivery.Channel);
+	}
+
+	[Fact]
+	public void Declared_Delivery_And_Channel_Are_Reported()
+	{
+		var move = PacketAction.GetDelivery(new MovePacket());
+		var chat = PacketAction.GetDelivery(new ChatPacket());
+
+		Assert.Equal(Delivery.Sequenced, move.Method);
+		Assert.Equal(0, move.Channel);
+		Assert.Equal(Delivery.ReliableOrdered, chat.Method);
+		Assert.Equal(3, chat.Channel);
+	}
+
+	[Fact]
+	public void Delivery_Can_Be_Looked_Up_By_The_Id_A_Send_Already_Has()
+	{
+		var writer = new EzWriter();
+
+		EzSerializer.Write(writer, new ChatPacket { text = "hi" }, out var id);
+
+		Assert.Equal(PacketAction.ChatPacketId, id);
+		Assert.Equal(3, PacketAction.GetDelivery(id).Channel);
+	}
+
+	[Fact]
+	public void Declaring_Delivery_Costs_Nothing_On_The_Wire()
+	{
+		// Two floats and the id, with nothing added for the declaration.
+		Assert.Equal(
+			PacketFramer.HeaderSize + sizeof(float) + sizeof(float),
+			EzSerializer.Serialize(new MovePacket()).Length);
+	}
+
+	[Fact]
 	public void Protocol_Hash_Covers_The_Shared_Packets()
 	{
 		// Pinned deliberately. It moves when a shared packet's id, field names, field
@@ -749,6 +790,19 @@ public class TaggedPacket : IPacket
 	[Field(1)] public int zeta;
 	[Field(2)] public int alpha;
 	[Field(3, Optional = true)] public int later;
+}
+
+[Delivery(Delivery.Sequenced)]
+public class MovePacket : IPacket
+{
+	public float x;
+	public float y;
+}
+
+[Delivery(Delivery.ReliableOrdered, Channel = 3)]
+public class ChatPacket : IPacket
+{
+	public string? text;
 }
 
 public enum Team : byte

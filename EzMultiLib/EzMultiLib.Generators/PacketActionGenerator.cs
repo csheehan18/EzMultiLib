@@ -102,19 +102,25 @@ public sealed class PacketActionGenerator : ISourceGenerator
 		public uint Id { get; }
 		public bool Tagged { get; }
 		public int OptionalCount { get; }
+		public string Delivery { get; }
+		public byte Channel { get; }
 
 		public PacketModel(
 			INamedTypeSymbol symbol,
 			List<IFieldSymbol> fields,
 			uint id,
 			bool tagged,
-			int optionalCount)
+			int optionalCount,
+			string delivery,
+			byte channel)
 		{
 			Symbol = symbol;
 			Fields = fields;
 			Id = id;
 			Tagged = tagged;
 			OptionalCount = optionalCount;
+			Delivery = delivery;
+			Channel = channel;
 		}
 
 		public string Name => Symbol.Name;
@@ -192,11 +198,14 @@ public sealed class PacketActionGenerator : ISourceGenerator
 		var fieldSymbol =
 			compilation.GetTypeByMetadataName("EzMultiLib.Packets.FieldAttribute");
 
+		var deliverySymbol =
+			compilation.GetTypeByMetadataName("EzMultiLib.Packets.DeliveryAttribute");
+
 		var models = new List<PacketModel>();
 
 		foreach (var packet in packets)
 		{
-			if (TryBuildModel(context, packet, packetIdSymbol, fieldSymbol, ipacketSymbol, out var model))
+			if (TryBuildModel(context, packet, packetIdSymbol, fieldSymbol, deliverySymbol, ipacketSymbol, out var model))
 				models.Add(model);
 		}
 
@@ -538,6 +547,7 @@ public sealed class PacketActionGenerator : ISourceGenerator
 		INamedTypeSymbol packet,
 		INamedTypeSymbol? packetIdSymbol,
 		INamedTypeSymbol? fieldSymbol,
+		INamedTypeSymbol? deliverySymbol,
 		INamedTypeSymbol ipacket,
 		out PacketModel model)
 	{
@@ -593,13 +603,58 @@ public sealed class PacketActionGenerator : ISourceGenerator
 		if (!valid)
 			return false;
 
-		model = new PacketModel(packet, ordered, id, tagged, optionalCount);
+		ResolveDelivery(packet, deliverySymbol, out var delivery, out var channel);
+
+		model = new PacketModel(packet, ordered, id, tagged, optionalCount, delivery, channel);
 		return true;
 	}
 
 	// An unnumbered packet keeps name ordering, which is what every packet written
 	// before numbering existed uses. A numbered one is ordered by its numbers, so
 	// renaming a field no longer moves it on the wire.
+	// Delivery is a send side choice and does not change how any byte is parsed, so it
+	// stays out of the protocol hash: tuning it on one side should not turn the other
+	// side away. Reliable and ordered unless the packet says otherwise.
+	private static void ResolveDelivery(
+		INamedTypeSymbol packet,
+		INamedTypeSymbol? deliverySymbol,
+		out string method,
+		out byte channel)
+	{
+		method = "ReliableOrdered";
+		channel = 0;
+
+		if (deliverySymbol == null)
+			return;
+
+		var attribute = packet.GetAttributes().FirstOrDefault(a =>
+			SymbolEqualityComparer.Default.Equals(a.AttributeClass, deliverySymbol));
+
+		if (attribute == null)
+			return;
+
+		if (attribute.ConstructorArguments.Length == 1
+			&& attribute.ConstructorArguments[0].Type is INamedTypeSymbol enumType)
+		{
+			var value = attribute.ConstructorArguments[0].Value;
+
+			// Read the member's name off the symbol rather than mapping the underlying
+			// number, so reordering the enum cannot quietly change what is emitted.
+			var member = enumType.GetMembers()
+				.OfType<IFieldSymbol>()
+				.FirstOrDefault(f => f.HasConstantValue && Equals(f.ConstantValue, value));
+
+			if (member != null)
+				method = member.Name;
+		}
+
+		foreach (var named in attribute.NamedArguments)
+		{
+			if (named.Key == "Channel" && named.Value.Value is byte declared)
+				channel = declared;
+		}
+	}
+
 	private static bool TryOrderFields(
 		GeneratorExecutionContext context,
 		INamedTypeSymbol packet,
@@ -977,6 +1032,31 @@ public sealed class PacketActionGenerator : ISourceGenerator
 		sb.AppendLine("            throw new ArgumentException($\"Unknown packet type '{packet?.GetType()}'\", nameof(packet));");
 		sb.AppendLine("        }");
 		sb.AppendLine();
+		sb.AppendLine();
+		sb.AppendLine("        public static PacketDelivery GetDelivery(IPacket packet) =>");
+		sb.AppendLine("            GetDelivery(GetPacketId(packet));");
+		sb.AppendLine();
+		sb.AppendLine("        public static PacketDelivery GetDelivery(uint id)");
+		sb.AppendLine("        {");
+		sb.AppendLine("            switch (id)");
+		sb.AppendLine("            {");
+
+		// Only packets that asked for something get a case. Everything else, and an id
+		// this build does not know, lands on the safe default below.
+		foreach (var packet in packets)
+		{
+			if (packet.Delivery == "ReliableOrdered" && packet.Channel == 0)
+				continue;
+
+			sb.AppendLine($"                case {packet.Name}Id:");
+			sb.AppendLine($"                    return new PacketDelivery(Delivery.{packet.Delivery}, {packet.Channel});");
+		}
+
+		sb.AppendLine("                default:");
+		sb.AppendLine("                    return new PacketDelivery(Delivery.ReliableOrdered, 0);");
+		sb.AppendLine("            }");
+		sb.AppendLine("        }");
+		sb.AppendLine();
 		sb.AppendLine("        public static void AcceptPacket(Peer? peer, IPacket packet) => Default.Accept(peer, packet);");
 		sb.AppendLine("    }");
 		sb.AppendLine("}");
@@ -1127,9 +1207,12 @@ public sealed class PacketActionGenerator : ISourceGenerator
 		sb.AppendLine("            return true;");
 		sb.AppendLine("        }");
 		sb.AppendLine();
-		sb.AppendLine("        public static void Write(IPacketWriter writer, IPacket packet)");
+		sb.AppendLine("        public static void Write(IPacketWriter writer, IPacket packet) =>");
+		sb.AppendLine("            Write(writer, packet, out _);");
+		sb.AppendLine();
+		sb.AppendLine("        public static void Write(IPacketWriter writer, IPacket packet, out uint id)");
 		sb.AppendLine("        {");
-		sb.AppendLine("            var id = PacketAction.GetPacketId(packet);");
+		sb.AppendLine("            id = PacketAction.GetPacketId(packet);");
 		sb.AppendLine("            PacketFramer.WriteHeader(writer, id);");
 		sb.AppendLine("            WriteBody(writer, id, packet);");
 		sb.AppendLine("        }");

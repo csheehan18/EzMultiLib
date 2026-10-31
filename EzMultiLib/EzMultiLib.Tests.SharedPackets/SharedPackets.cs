@@ -1,7 +1,8 @@
-using EzMultiLib.Packets;
+﻿using EzMultiLib.Packets;
 
 namespace SharedProtocol
 {
+	[Delivery(Delivery.Sequenced, Channel = 2)]
 	public class SharedLoginPacket : IPacket
 	{
 		public string? username;
