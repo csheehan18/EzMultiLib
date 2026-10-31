@@ -154,7 +154,7 @@ public sealed class PacketActionGenerator : ISourceGenerator
 		models = RejectDuplicateNames(context, models);
 		models = RejectCollidingIds(context, models);
 
-		context.AddSource("PacketAction.g.cs", GenerateSource(models));
+		context.AddSource("PacketAction.g.cs", GenerateSource(models, ProtocolHash(models, compilation)));
 	}
 
 	private static bool IsPacket(INamedTypeSymbol symbol, INamedTypeSymbol ipacketSymbol)
@@ -337,6 +337,35 @@ public sealed class PacketActionGenerator : ISourceGenerator
 
 			return hash == 0 ? 1u : hash;
 		}
+	}
+
+	// Two processes only have to agree about the packets they share. In the shared
+	// project layout that is everything coming from the referenced assembly, and each
+	// side stays free to declare local packets of its own. With no shared assembly
+	// both sides are built from the same source, so every packet counts.
+	//
+	// Field names are part of the hash because field order is derived from them, so a
+	// rename reorders the wire without changing any packet id or length.
+	private static uint ProtocolHash(List<PacketModel> models, Compilation compilation)
+	{
+		var shared = models
+			.Where(m => !SymbolEqualityComparer.Default.Equals(
+				m.Symbol.ContainingAssembly, compilation.Assembly))
+			.ToList();
+
+		var sb = new StringBuilder();
+
+		foreach (var model in shared.Count > 0 ? shared : models)
+		{
+			sb.Append(model.Name).Append(':').Append(model.Id).Append('(');
+
+			foreach (var field in model.Fields)
+				sb.Append(field.Name).Append(':').Append(PrimitiveName(field.Type)).Append(',');
+
+			sb.Append(')');
+		}
+
+		return StableId(sb.ToString());
 	}
 
 	private static bool TryResolveId(
@@ -532,7 +561,7 @@ public sealed class PacketActionGenerator : ISourceGenerator
 		return $"packet.{field.Name} = {value};";
 	}
 
-	private static string GenerateSource(List<PacketModel> packets)
+	private static string GenerateSource(List<PacketModel> packets, uint protocolHash)
 	{
 		var sb = new StringBuilder();
 
@@ -548,7 +577,7 @@ public sealed class PacketActionGenerator : ISourceGenerator
 		sb.AppendLine("using EzMultiLib.Serialization.Packets;");
 		sb.AppendLine();
 
-		AppendPacketAction(sb, packets);
+		AppendPacketAction(sb, packets, protocolHash);
 		sb.AppendLine();
 		AppendDispatcher(sb, packets);
 		sb.AppendLine();
@@ -557,7 +586,7 @@ public sealed class PacketActionGenerator : ISourceGenerator
 		return sb.ToString();
 	}
 
-	private static void AppendPacketAction(StringBuilder sb, List<PacketModel> packets)
+	private static void AppendPacketAction(StringBuilder sb, List<PacketModel> packets, uint protocolHash)
 	{
 		sb.AppendLine("namespace EzMultiLib.Packets");
 		sb.AppendLine("{");
@@ -569,6 +598,8 @@ public sealed class PacketActionGenerator : ISourceGenerator
 			sb.AppendLine($"        public const uint {packet.Name}Id = {packet.Id}u;");
 		}
 
+		sb.AppendLine();
+		sb.AppendLine($"        public const uint ProtocolHash = {protocolHash}u;");
 		sb.AppendLine();
 		sb.AppendLine("        public static PacketDispatcher Default { get; } = new PacketDispatcher();");
 		sb.AppendLine();

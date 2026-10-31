@@ -136,6 +136,31 @@ public class LoginPacket : IPacket
 Pinning is also how you rename a packet without breaking the wire format. Id 0 is
 reserved.
 
+## Protocol Hash
+An id survives adding and reordering packets, but it says nothing about the shape of
+the body behind it. Fields go on the wire in name order, so renaming one reorders the
+payload while the id and the length stay exactly the same. Two builds that disagree
+about a field name will read each other's fields in the wrong order and never notice.
+
+`PacketAction.ProtocolHash` is a compile time constant over every shared packet's id,
+field names, field order and field types. Both sides derive the same number from the
+same definitions, so compare it when a connection opens. With LiteNetLib it goes
+straight in the connect key:
+```csharp
+// client
+client.Connect(host, port, PacketAction.ProtocolHash.ToString());
+
+// server
+listener.ConnectionRequestEvent += request =>
+    request.AcceptIfKey(PacketAction.ProtocolHash.ToString());
+```
+A client built against different packet definitions is turned away at connect instead
+of desyncing an hour later.
+
+Only shared packets count, so a client and a server can still each declare local
+packets of their own without drifting apart. With no shared project every packet
+counts, since both sides are built from the same source anyway.
+
 ## Supported Field Types (I'll add more in the future)
 - bool
 - sbyte, byte

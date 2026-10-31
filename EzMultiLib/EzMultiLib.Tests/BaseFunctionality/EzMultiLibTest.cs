@@ -414,6 +414,16 @@ public class EzMultiLibTest
 	}
 
 	[Fact]
+	public void Protocol_Hash_Covers_The_Shared_Packets()
+	{
+		// Pinned deliberately. It moves when a shared packet's id, field names, field
+		// order or field types change, and local packets never move it. A failure here
+		// means the wire contract shifted and older builds will not agree with this one.
+		Assert.Equal(1838504802u, PacketAction.ProtocolHash);
+		Assert.NotEqual(0u, PacketAction.ProtocolHash);
+	}
+
+	[Fact]
 	public void Read_Yields_The_Id_So_Dispatch_Needs_No_Lookup()
 	{
 		var reader = new EzReader(EzSerializer.Serialize(new SimplePacket { favoriteNumber = 8 }));
