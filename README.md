@@ -46,6 +46,19 @@ client.OnChatPacket += (peer, chat) => chatUI.Append(chat.text);
 One dispatcher per endpoint, not per peer. A server has one and all of its peers
 share it, which is what the `Peer` argument is for. `ClearHandlers()` detaches
 everything at once, for teardown that would otherwise leak subscribers.
+
+A handler that throws would otherwise unwind straight into your receive loop and take
+the tick with it. Subscribe `HandlerFailed` and the exception comes to you instead,
+and the next packet still gets delivered:
+```csharp
+server.HandlerFailed += (peer, packet, error) =>
+    Log.Error($"{packet.GetType().Name} from {peer} failed: {error}");
+```
+Leave it unsubscribed and the exception propagates the way it always did, rather than
+disappearing where nobody can see it. Attaching it costs nothing per packet: the
+invocation list is never copied and dispatch still allocates zero. One caveat, a
+throwing handler does still shortcut any later subscriber to that same event, so keep
+one handler per packet if that matters to you. `ClearHandlers()` detaches this too.
 ## Send A Packet
 The packet id is written into the payload, so a transport only has to move the bytes.
 ```csharp

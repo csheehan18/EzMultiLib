@@ -414,6 +414,78 @@ public class EzMultiLibTest
 	}
 
 	[Fact]
+	public void A_Throwing_Handler_Does_Not_Unwind_The_Receive_Loop()
+	{
+		var dispatcher = new PacketDispatcher();
+		var peer = new Peer(42);
+		var delivered = 0;
+
+		Peer? reportedPeer = null;
+		IPacket? reportedPacket = null;
+		Exception? reportedError = null;
+
+		dispatcher.OnSimplePacket += (p, packet) =>
+		{
+			delivered++;
+
+			if (packet.favoriteNumber == 2)
+				throw new InvalidOperationException("boom");
+		};
+
+		dispatcher.HandlerFailed += (p, packet, error) =>
+		{
+			reportedPeer = p;
+			reportedPacket = packet;
+			reportedError = error;
+		};
+
+		for (var n = 1; n <= 4; n++)
+			dispatcher.Accept(peer, new SimplePacket { favoriteNumber = n });
+
+		Assert.Equal(4, delivered);
+		Assert.Same(peer, reportedPeer);
+		Assert.Equal(2, Assert.IsType<SimplePacket>(reportedPacket).favoriteNumber);
+		Assert.Equal("boom", Assert.IsType<InvalidOperationException>(reportedError).Message);
+	}
+
+	[Fact]
+	public void Without_The_Hook_A_Throwing_Handler_Still_Propagates()
+	{
+		var dispatcher = new PacketDispatcher();
+
+		dispatcher.OnSimplePacket += (peer, packet) => throw new InvalidOperationException("boom");
+
+		Assert.Throws<InvalidOperationException>(
+			() => dispatcher.Accept(new Peer(1), new SimplePacket()));
+	}
+
+	[Fact]
+	public void The_Hook_Does_Not_Swallow_An_Unknown_Packet_Id()
+	{
+		var dispatcher = new PacketDispatcher();
+
+		dispatcher.HandlerFailed += (peer, packet, error) => { };
+
+		Assert.Throws<ArgumentException>(
+			() => dispatcher.Accept(new Peer(1), PacketAction.SimplePacketId + 1, new SimplePacket()));
+	}
+
+	[Fact]
+	public void Clear_Handlers_Detaches_The_Hook_Too()
+	{
+		var dispatcher = new PacketDispatcher();
+
+		dispatcher.OnSimplePacket += (peer, packet) => throw new InvalidOperationException("boom");
+		dispatcher.HandlerFailed += (peer, packet, error) => { };
+		dispatcher.ClearHandlers();
+
+		dispatcher.OnSimplePacket += (peer, packet) => throw new InvalidOperationException("boom");
+
+		Assert.Throws<InvalidOperationException>(
+			() => dispatcher.Accept(new Peer(1), new SimplePacket()));
+	}
+
+	[Fact]
 	public void Collections_And_Nested_Packets_Round_Trip()
 	{
 		var sent = new InventoryPacket

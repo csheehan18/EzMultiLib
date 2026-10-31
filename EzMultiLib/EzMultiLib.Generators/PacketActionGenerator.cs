@@ -848,6 +848,13 @@ public sealed class PacketActionGenerator : ISourceGenerator
 		}
 
 		sb.AppendLine();
+		sb.AppendLine("        // Subscribe this and a handler that throws is reported here instead of");
+		sb.AppendLine("        // unwinding into the receive loop, and the next packet still gets");
+		sb.AppendLine("        // delivered. Leave it unsubscribed and the exception propagates the way");
+		sb.AppendLine("        // it always has, rather than being swallowed where nobody can see it.");
+		sb.AppendLine("        public event Action<Peer?, IPacket, Exception>? HandlerFailed;");
+
+		sb.AppendLine();
 		sb.AppendLine("        public void Accept(Peer? peer, IPacket packet) =>");
 		sb.AppendLine("            Accept(peer, PacketAction.GetPacketId(packet), packet);");
 		sb.AppendLine();
@@ -859,7 +866,7 @@ public sealed class PacketActionGenerator : ISourceGenerator
 		foreach (var packet in packets)
 		{
 			sb.AppendLine($"                case PacketAction.{packet.Name}Id:");
-			sb.AppendLine($"                    On{packet.Name}?.Invoke(peer, ({packet.TypeName})packet);");
+			sb.AppendLine($"                    Deliver(On{packet.Name}, peer, ({packet.TypeName})packet);");
 			sb.AppendLine("                    break;");
 		}
 
@@ -876,7 +883,35 @@ public sealed class PacketActionGenerator : ISourceGenerator
 			sb.AppendLine($"            On{packet.Name} = null;");
 		}
 
+		sb.AppendLine("            HandlerFailed = null;");
 		sb.AppendLine("        }");
+		sb.AppendLine();
+		sb.AppendLine("        // No allocation on the way through: the invocation list is never copied,");
+		sb.AppendLine("        // and with no error hook attached there is not even a try block.");
+		sb.AppendLine("        private void Deliver<T>(Action<Peer?, T>? handler, Peer? peer, T packet)");
+		sb.AppendLine("            where T : IPacket");
+		sb.AppendLine("        {");
+		sb.AppendLine("            if (handler == null)");
+		sb.AppendLine("                return;");
+		sb.AppendLine();
+		sb.AppendLine("            var failed = HandlerFailed;");
+		sb.AppendLine();
+		sb.AppendLine("            if (failed == null)");
+		sb.AppendLine("            {");
+		sb.AppendLine("                handler(peer, packet);");
+		sb.AppendLine("                return;");
+		sb.AppendLine("            }");
+		sb.AppendLine();
+		sb.AppendLine("            try");
+		sb.AppendLine("            {");
+		sb.AppendLine("                handler(peer, packet);");
+		sb.AppendLine("            }");
+		sb.AppendLine("            catch (Exception error)");
+		sb.AppendLine("            {");
+		sb.AppendLine("                failed(peer, packet, error);");
+		sb.AppendLine("            }");
+		sb.AppendLine("        }");
+
 		sb.AppendLine("    }");
 		sb.AppendLine("}");
 	}
