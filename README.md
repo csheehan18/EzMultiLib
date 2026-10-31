@@ -75,6 +75,16 @@ EzSerializer.Write(writer, packet);
 while (EzSerializer.TryRead(reader, out var packet))
     dispatcher.Accept(peer, packet);
 ```
+
+`Accept` has to look the packet's id up by its type. On a receive loop that is wasted
+work, because `TryRead` already read the id off the wire. Take it and hand it straight
+to `Accept` to skip the lookup:
+```csharp
+while (EzSerializer.TryRead(reader, out var packet, out var id))
+    dispatcher.Accept(peer, id, packet);
+```
+Dispatch is a jump table on the id either way, so it costs the same whether you have
+five packet types or five hundred.
 ## Shared Packet
 The real power of this library comes from a shared project. Define your packets once, 
 reference the dll from both your server and client. The IDs are assigned 

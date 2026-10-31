@@ -1,4 +1,4 @@
-using EzMultiLib.Packets;
+﻿using EzMultiLib.Packets;
 using EzMultiLib.Peers;
 using EzMultiLib.Serialization;
 using EzMultiLib.Serialization.IO;
@@ -412,6 +412,61 @@ public class EzMultiLibTest
 		Assert.Equal(11, incoming.baseValue);
 		Assert.Equal(22, incoming.derivedValue);
 	}
+
+	[Fact]
+	public void Read_Yields_The_Id_So_Dispatch_Needs_No_Lookup()
+	{
+		var reader = new EzReader(EzSerializer.Serialize(new SimplePacket { favoriteNumber = 8 }));
+
+		Assert.True(EzSerializer.TryRead(reader, out var packet, out var id));
+		Assert.Equal(PacketAction.SimplePacketId, id);
+
+		var dispatcher = new PacketDispatcher();
+		SimplePacket? seen = null;
+
+		dispatcher.OnSimplePacket += (peer, p) => seen = p;
+		dispatcher.Accept(new Peer(1), id, packet!);
+
+		Assert.Equal(8, seen?.favoriteNumber);
+	}
+
+	[Fact]
+	public void A_Packet_Deriving_From_Another_Packet_Keeps_Its_Own_Identity()
+	{
+		var sent = new ExtendedPacket { baseNumber = 3, extra = 7 };
+
+		Assert.Equal(PacketAction.ExtendedPacketId, PacketAction.GetPacketId(sent));
+
+		var typed = Assert.IsType<ExtendedPacket>(
+			EzSerializer.Deserialize(EzSerializer.Serialize(sent)));
+
+		Assert.Equal(3, typed.baseNumber);
+		Assert.Equal(7, typed.extra);
+
+		var dispatcher = new PacketDispatcher();
+		var baseFired = 0;
+		var extendedFired = 0;
+
+		dispatcher.OnConcreteBasePacket += (peer, p) => baseFired++;
+		dispatcher.OnExtendedPacket += (peer, p) => extendedFired++;
+
+		dispatcher.Accept(new Peer(1), sent);
+
+		Assert.Equal(0, baseFired);
+		Assert.Equal(1, extendedFired);
+	}
+}
+
+// A concrete base that sorts before its subclass, which is the arrangement that
+// used to make the generated type switch unreachable.
+public class ConcreteBasePacket : IPacket
+{
+	public int baseNumber;
+}
+
+public class ExtendedPacket : ConcreteBasePacket
+{
+	public int extra;
 }
 
 public enum Team : byte

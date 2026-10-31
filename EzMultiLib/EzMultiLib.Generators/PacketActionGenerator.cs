@@ -540,6 +540,7 @@ public sealed class PacketActionGenerator : ISourceGenerator
 		sb.AppendLine("#nullable enable");
 		sb.AppendLine();
 		sb.AppendLine("using System;");
+		sb.AppendLine("using System.Collections.Generic;");
 		sb.AppendLine("using EzMultiLib.IO;");
 		sb.AppendLine("using EzMultiLib.Packets;");
 		sb.AppendLine("using EzMultiLib.Peers;");
@@ -571,19 +572,22 @@ public sealed class PacketActionGenerator : ISourceGenerator
 		sb.AppendLine();
 		sb.AppendLine("        public static PacketDispatcher Default { get; } = new PacketDispatcher();");
 		sb.AppendLine();
-		sb.AppendLine("        public static uint GetPacketId(IPacket packet)");
+		sb.AppendLine($"        private static readonly Dictionary<Type, uint> Ids = new Dictionary<Type, uint>({packets.Count})");
 		sb.AppendLine("        {");
-		sb.AppendLine("            switch (packet)");
-		sb.AppendLine("            {");
 
 		foreach (var packet in packets)
 		{
-			sb.AppendLine($"                case {packet.TypeName} _: return {packet.Name}Id;");
+			sb.AppendLine($"            {{ typeof({packet.TypeName}), {packet.Name}Id }},");
 		}
 
-		sb.AppendLine("                default:");
-		sb.AppendLine("                    throw new ArgumentException($\"Unknown packet type '{packet?.GetType()}'\", nameof(packet));");
-		sb.AppendLine("            }");
+		sb.AppendLine("        };");
+		sb.AppendLine();
+		sb.AppendLine("        public static uint GetPacketId(IPacket packet)");
+		sb.AppendLine("        {");
+		sb.AppendLine("            if (packet != null && Ids.TryGetValue(packet.GetType(), out var id))");
+		sb.AppendLine("                return id;");
+		sb.AppendLine();
+		sb.AppendLine("            throw new ArgumentException($\"Unknown packet type '{packet?.GetType()}'\", nameof(packet));");
 		sb.AppendLine("        }");
 		sb.AppendLine();
 		sb.AppendLine("        public static void AcceptPacket(Peer? peer, IPacket packet) => Default.Accept(peer, packet);");
@@ -604,15 +608,18 @@ public sealed class PacketActionGenerator : ISourceGenerator
 		}
 
 		sb.AppendLine();
-		sb.AppendLine("        public void Accept(Peer? peer, IPacket packet)");
+		sb.AppendLine("        public void Accept(Peer? peer, IPacket packet) =>");
+		sb.AppendLine("            Accept(peer, PacketAction.GetPacketId(packet), packet);");
+		sb.AppendLine();
+		sb.AppendLine("        public void Accept(Peer? peer, uint id, IPacket packet)");
 		sb.AppendLine("        {");
-		sb.AppendLine("            switch (packet)");
+		sb.AppendLine("            switch (id)");
 		sb.AppendLine("            {");
 
 		foreach (var packet in packets)
 		{
-			sb.AppendLine($"                case {packet.TypeName} p:");
-			sb.AppendLine($"                    On{packet.Name}?.Invoke(peer, p);");
+			sb.AppendLine($"                case PacketAction.{packet.Name}Id:");
+			sb.AppendLine($"                    On{packet.Name}?.Invoke(peer, ({packet.TypeName})packet);");
 			sb.AppendLine("                    break;");
 		}
 
@@ -676,14 +683,18 @@ public sealed class PacketActionGenerator : ISourceGenerator
 		sb.AppendLine("            return true;");
 		sb.AppendLine("        }");
 		sb.AppendLine();
-		sb.AppendLine("        public static bool TryRead(IPacketReader reader, out IPacket? packet)");
+		sb.AppendLine("        public static bool TryRead(IPacketReader reader, out IPacket? packet) =>");
+		sb.AppendLine("            TryRead(reader, out packet, out _);");
+		sb.AppendLine();
+		sb.AppendLine("        public static bool TryRead(IPacketReader reader, out IPacket? packet, out uint id)");
 		sb.AppendLine("        {");
 		sb.AppendLine("            packet = null;");
+		sb.AppendLine("            id = 0;");
 		sb.AppendLine();
 		sb.AppendLine("            if (reader == null)");
 		sb.AppendLine("                return false;");
 		sb.AppendLine();
-		sb.AppendLine("            var id = PacketFramer.ReadHeader(reader);");
+		sb.AppendLine("            id = PacketFramer.ReadHeader(reader);");
 		sb.AppendLine();
 		sb.AppendLine("            if (reader.Failed || !TryReadBody(id, reader, out packet) || reader.Failed)");
 		sb.AppendLine("            {");
@@ -696,8 +707,9 @@ public sealed class PacketActionGenerator : ISourceGenerator
 		sb.AppendLine();
 		sb.AppendLine("        public static void Write(IPacketWriter writer, IPacket packet)");
 		sb.AppendLine("        {");
-		sb.AppendLine("            PacketFramer.WriteHeader(writer, PacketAction.GetPacketId(packet));");
-		sb.AppendLine("            WriteBody(writer, packet);");
+		sb.AppendLine("            var id = PacketAction.GetPacketId(packet);");
+		sb.AppendLine("            PacketFramer.WriteHeader(writer, id);");
+		sb.AppendLine("            WriteBody(writer, id, packet);");
 		sb.AppendLine("        }");
 		sb.AppendLine();
 		sb.AppendLine("        public static IPacket Read(IPacketReader reader)");
@@ -708,15 +720,18 @@ public sealed class PacketActionGenerator : ISourceGenerator
 		sb.AppendLine("            return packet!;");
 		sb.AppendLine("        }");
 		sb.AppendLine();
-		sb.AppendLine("        public static void WriteBody(IPacketWriter writer, IPacket packet)");
+		sb.AppendLine("        public static void WriteBody(IPacketWriter writer, IPacket packet) =>");
+		sb.AppendLine("            WriteBody(writer, PacketAction.GetPacketId(packet), packet);");
+		sb.AppendLine();
+		sb.AppendLine("        public static void WriteBody(IPacketWriter writer, uint id, IPacket packet)");
 		sb.AppendLine("        {");
-		sb.AppendLine("            switch (packet)");
+		sb.AppendLine("            switch (id)");
 		sb.AppendLine("            {");
 
 		foreach (var packet in packets)
 		{
-			sb.AppendLine($"                case {packet.TypeName} p:");
-			sb.AppendLine($"                    Write{packet.Name}(writer, p);");
+			sb.AppendLine($"                case PacketAction.{packet.Name}Id:");
+			sb.AppendLine($"                    Write{packet.Name}(writer, ({packet.TypeName})packet);");
 			sb.AppendLine("                    break;");
 		}
 
