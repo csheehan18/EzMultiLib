@@ -95,18 +95,6 @@ public sealed class PacketActionGenerator : ISourceGenerator
 		DiagnosticSeverity.Error,
 		true);
 
-	// Info, not a warning: it is advice, and a project full of unnumbered packets is
-	// not broken. Raise it with
-	// dotnet_diagnostic.EZML012.severity = warning
-	// in .editorconfig once the packets that matter are numbered.
-	private static readonly DiagnosticDescriptor UnnumberedPacket = new DiagnosticDescriptor(
-		"EZML012",
-		"Packet does not number its fields",
-		"Packet '{0}' does not number its fields, so their order on the wire comes from their names and renaming one silently changes that order; number them with [Field(n)] to pin it",
-		"EzMultiLib",
-		DiagnosticSeverity.Info,
-		true);
-
 	private sealed class PacketModel
 	{
 		public INamedTypeSymbol Symbol { get; }
@@ -614,14 +602,6 @@ public sealed class PacketActionGenerator : ISourceGenerator
 
 		if (!valid)
 			return false;
-
-		if (!tagged && ordered.Count > 0)
-		{
-			context.ReportDiagnostic(Diagnostic.Create(
-				UnnumberedPacket,
-				SourceLocation(packet),
-				packet.ToDisplayString()));
-		}
 
 		ResolveDelivery(packet, deliverySymbol, out var delivery, out var channel);
 

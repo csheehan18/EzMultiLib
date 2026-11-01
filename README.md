@@ -287,6 +287,29 @@ that matter are numbered:
 dotnet_diagnostic.EZML012.severity = warning
 ```
 
+Numbering a packet that already exists keeps every field exactly where it was, so
+nothing gets transposed. The packet does gain one byte, the optional count described
+below, and its hash moves with it. So adopting numbering is a one time wire change:
+number both sides together, or do it before you ship.
+
+You do not have to write the numbers. Reference `EzMultiLib.CodeFixes` next to the
+generator and the hint carries a fix that writes them, in the order the packet already
+serializes in:
+```xml
+<ProjectReference Include="..\EzMultiLib.Generators\EzMultiLib.Generators.csproj"
+                  OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+<ProjectReference Include="..\EzMultiLib.CodeFixes\EzMultiLib.CodeFixes.csproj"
+                  OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+```
+One packet from the lightbulb, or every packet in a project at once:
+```bash
+dotnet format analyzers --diagnostics EZML012 --severity info
+```
+A field declaring several names at once is split, since an attribute goes on the
+declaration rather than the variable. A packet that inherits fields is left alone: the
+numbering would have to cover the base's fields too, and those live somewhere the fix
+is not looking.
+
 ### Adding A Field Later
 Mark an appended field optional and a build that predates it can still talk to one that
 has it:

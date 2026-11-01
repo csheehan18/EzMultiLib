@@ -13,6 +13,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EzMultiLib.Serialization", 
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EzMultiLib.Tests.SharedPackets", "EzMultiLib.Tests.SharedPackets\EzMultiLib.Tests.SharedPackets.csproj", "{A150BCE4-F1B3-4E89-AF81-5A935CC5CE24}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EzMultiLib.CodeFixes", "EzMultiLib.CodeFixes\EzMultiLib.CodeFixes.csproj", "{9006915D-A5A8-4858-980B-6AEB5400FD68}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -83,6 +85,18 @@ Global
 		{A150BCE4-F1B3-4E89-AF81-5A935CC5CE24}.Release|x64.Build.0 = Release|Any CPU
 		{A150BCE4-F1B3-4E89-AF81-5A935CC5CE24}.Release|x86.ActiveCfg = Release|Any CPU
 		{A150BCE4-F1B3-4E89-AF81-5A935CC5CE24}.Release|x86.Build.0 = Release|Any CPU
+		{9006915D-A5A8-4858-980B-6AEB5400FD68}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9006915D-A5A8-4858-980B-6AEB5400FD68}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9006915D-A5A8-4858-980B-6AEB5400FD68}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{9006915D-A5A8-4858-980B-6AEB5400FD68}.Debug|x64.Build.0 = Debug|Any CPU
+		{9006915D-A5A8-4858-980B-6AEB5400FD68}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{9006915D-A5A8-4858-980B-6AEB5400FD68}.Debug|x86.Build.0 = Debug|Any CPU
+		{9006915D-A5A8-4858-980B-6AEB5400FD68}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9006915D-A5A8-4858-980B-6AEB5400FD68}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9006915D-A5A8-4858-980B-6AEB5400FD68}.Release|x64.ActiveCfg = Release|Any CPU
+		{9006915D-A5A8-4858-980B-6AEB5400FD68}.Release|x64.Build.0 = Release|Any CPU
+		{9006915D-A5A8-4858-980B-6AEB5400FD68}.Release|x86.ActiveCfg = Release|Any CPU
+		{9006915D-A5A8-4858-980B-6AEB5400FD68}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
