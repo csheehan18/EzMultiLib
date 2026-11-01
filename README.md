@@ -277,6 +277,16 @@ had, so nothing you have already written moves.
 Contiguity is not fussiness. It is what makes deleting a field a build error instead of
 a silent shift of everything behind it.
 
+An unnumbered packet reports `EZML012` to say so, because a rename that quietly moves
+your bytes is not something you should have to already know about. It is informational,
+since a project full of unnumbered packets is not broken. Turn it up once the packets
+that matter are numbered:
+```
+# .editorconfig
+[*.cs]
+dotnet_diagnostic.EZML012.severity = warning
+```
+
 ### Adding A Field Later
 Mark an appended field optional and a build that predates it can still talk to one that
 has it:
